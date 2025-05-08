@@ -5,7 +5,8 @@ import me.fungames.jfortniteparse.ue4.objects.core.misc.FEngineVersion
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.objects.core.serialization.FCustomVersion
 import me.fungames.jfortniteparse.ue4.reader.FArchive
-import me.fungames.jfortniteparse.ue4.versions.GAME_VALORANT
+import me.fungames.jfortniteparse.ue4.registry.objects.FSHAHash
+import me.fungames.jfortniteparse.ue4.versions.*
 import me.fungames.jfortniteparse.ue4.versions.VER_UE4_ADDED_PACKAGE_OWNER
 import me.fungames.jfortniteparse.ue4.versions.VER_UE4_ADDED_PACKAGE_SUMMARY_LOCALIZATION_ID
 import me.fungames.jfortniteparse.ue4.versions.VER_UE4_NON_OUTER_PACKAGE_IMPORT
@@ -45,35 +46,52 @@ class FGenerationInfo {
  * A "table of contents" for an Unreal package file.  Stored at the top of the file.
  */
 class FPackageFileSummary {
+    val PACKAGE_FILE_TAG: UInt = 0x9E2A83C1U
+    val PACKAGE_FILE_TAG_SWAPPED: UInt = 0xC1832A9EU
+    val PACKAGE_FILE_TAG_ACE7: UInt = 0x37454341U
+    val PACKAGE_FILE_TAG_ONE: UInt = 0x00656E6FU // SOD2
+    val PACKAGE_FILE_TAG_NTE: UInt = 0xD5A8D56EU
+
     var tag: UInt
     var legacyFileVersion: Int
     var legacyUE3Version: Int
     var fileVersionUE4: Int
     var fileVersionLicenseUE4: Int
     var customVersionContainer: Array<FCustomVersion>
-    var totalHeaderSize: Int
-    var folderName: String
+    var totalHeaderSize: Int = 0
+    var packageName: String
     var packageFlags: UInt
     var nameCount: Int
     var nameOffset: Int
+    var softObjectPathsCount: Int = 0
+    var softObjectPathsOffset: Int = 0
+    var localizationId: String? = null
     var gatherableTextDataCount: Int
     var gatherableTextDataOffset: Int
+    var metaDataOffset: Int = 0
     var exportCount: Int
     var exportOffset: Int
     var importCount: Int
     var importOffset: Int
+    var cellExportCount: Int = 0
+    var cellExportOffset: Int = 0
+    var cellImportCount: Int = 0
+    var cellImportOffset: Int = 0
     var dependsOffset: Int
     var softPackageReferencesCount: Int
     var softPackageReferencesOffset: Int
     var searchableNamesOffset: Int
     var thumbnailTableOffset: Int
-    var guid: FGuid
+    var savedHash: FSHAHash? = null
+    var guid: FGuid? = null
+    var persistentGuid: FGuid? = null
     var generations: Array<FGenerationInfo>
     var savedByEngineVersion: FEngineVersion
     var compatibleWithEngineVersion: FEngineVersion
     var compressionFlags: UInt
     var compressedChunks: Array<FCompressedChunk>
     var packageSource: UInt
+    var unversioned: Boolean = false
     var additionalPackagesToCook: Array<String>
     var assetRegistryDataOffset: Int
     var bulkDataStartOffset: Int
@@ -81,6 +99,9 @@ class FPackageFileSummary {
     var chunkIds: Array<Int>
     var preloadDependencyCount: Int
     var preloadDependencyOffset: Int
+    var namesReferencedFromExportDataCount: Int = 0
+    var payloadTocOffet: Long = 0
+    var dataResourceOffset: Int = 0
 
     constructor(Ar: FArchive) {
         tag = Ar.readUInt32()
@@ -88,9 +109,19 @@ class FPackageFileSummary {
         legacyUE3Version = Ar.readInt32()
         fileVersionUE4 = Ar.readInt32()
         fileVersionLicenseUE4 = Ar.readInt32()
+        if (legacyFileVersion <= -8) {
+            // TODO: test this shit? maybe just skip past it? idk, but has been commited to CUE4 for 4 years, and was fine, so ig skip
+            fileVersionUE4 = Ar.readInt32()
+        }
+        if (fileVersionUE4 >= EUnrealEngineObjectUE5Version.PACKAGE_SAVED_HASH) {
+            savedHash = FSHAHash(Ar)
+            totalHeaderSize = Ar.readInt32()
+        }
         customVersionContainer = Ar.readTArray { FCustomVersion(Ar) }
-        totalHeaderSize = Ar.readInt32()
-        folderName = Ar.readString()
+        if (fileVersionUE4 < EUnrealEngineObjectUE5Version.PACKAGE_SAVED_HASH) {
+            totalHeaderSize = Ar.readInt32()
+        }
+        packageName = Ar.readString()
         packageFlags = Ar.readUInt32()
         if (packageFlags.toInt() and EPackageFlags.PKG_FilterEditorOnly.value != 0) {
             Ar.isFilterEditorOnly = true
@@ -99,7 +130,7 @@ class FPackageFileSummary {
         nameOffset = Ar.readInt32()
         if (!Ar.isFilterEditorOnly) {
             if (fileVersionUE4 >= VER_UE4_ADDED_PACKAGE_SUMMARY_LOCALIZATION_ID) {
-                val localizationId = Ar.readString()
+                localizationId = Ar.readString()
             }
         }
         gatherableTextDataCount = Ar.readInt32()
@@ -108,15 +139,29 @@ class FPackageFileSummary {
         exportOffset = Ar.readInt32()
         importCount = Ar.readInt32()
         importOffset = Ar.readInt32()
+
+        if (fileVersionUE4 >= EUnrealEngineObjectUE5Version.VERSE_CELLS) {
+            cellExportCount = Ar.readInt32()
+            cellExportOffset = Ar.readInt32()
+            cellImportCount = Ar.readInt32()
+            cellImportOffset = Ar.readInt32()
+        }
+
+        if (fileVersionUE4 >= EUnrealEngineObjectUE5Version.METADATA_SERIALIZATION_OFFSET) {
+            metaDataOffset = Ar.readInt32()
+        }
+
         dependsOffset = Ar.readInt32()
         softPackageReferencesCount = Ar.readInt32()
         softPackageReferencesOffset = Ar.readInt32()
         searchableNamesOffset = Ar.readInt32()
         thumbnailTableOffset = Ar.readInt32()
+        if (fileVersionUE4 < EUnrealEngineObjectUE5Version.PACKAGE_SAVED_HASH) {
+            guid = FGuid(Ar)
+        }
         if (Ar.game == GAME_VALORANT) {
             Ar.skip(8)
         }
-        guid = FGuid(Ar)
         if (!Ar.isFilterEditorOnly) {
             if (fileVersionUE4 >= VER_UE4_ADDED_PACKAGE_OWNER) {
                 val persistentGuid = FGuid(Ar)
@@ -148,7 +193,7 @@ class FPackageFileSummary {
         Ar.writeInt32(fileVersionLicenseUE4)
         Ar.writeTArray(customVersionContainer) { it.serialize(Ar) }
         Ar.writeInt32(totalHeaderSize)
-        Ar.writeString(folderName)
+        Ar.writeString(packageName)
         Ar.writeUInt32(packageFlags)
         Ar.writeInt32(nameCount)
         Ar.writeInt32(nameOffset)
@@ -163,7 +208,7 @@ class FPackageFileSummary {
         Ar.writeInt32(softPackageReferencesOffset)
         Ar.writeInt32(searchableNamesOffset)
         Ar.writeInt32(thumbnailTableOffset)
-        guid.serialize(Ar)
+        guid?.serialize(Ar)
         Ar.writeTArray(generations) { it.serialize(Ar) }
         savedByEngineVersion.serialize(Ar)
         compatibleWithEngineVersion.serialize(Ar)
@@ -224,7 +269,7 @@ class FPackageFileSummary {
         this.fileVersionLicenseUE4 = fileVersionLicenseUE4
         this.customVersionContainer = customVersionContainer
         this.totalHeaderSize = totalHeaderSize
-        this.folderName = folderName
+        this.packageName = folderName
         this.packageFlags = packageFlags
         this.nameCount = nameCount
         this.nameOffset = nameOffset

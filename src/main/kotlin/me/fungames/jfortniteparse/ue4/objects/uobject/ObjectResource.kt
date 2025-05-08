@@ -136,6 +136,8 @@ class FObjectExport : FObjectResource {
     var createBeforeSerializationDependencies: Int
     var serializationBeforeCreateDependencies: Int
     var createBeforeCreateDependencies: Int
+//    var scriptSerializationStartOffset: Long
+//    var scriptSerializationEndOffset: Long
     @Transient lateinit var exportObject: Lazy<UObject>
 
     constructor(Ar: FAssetArchive) {
@@ -175,6 +177,14 @@ class FObjectExport : FObjectResource {
             serializationBeforeCreateDependencies = 0
             createBeforeCreateDependencies = 0
         }
+
+//        if (!Ar.hasUnversionedProperties && Ar.ver >= EUnrealEngineObjectUE5Version.SCRIPT_SERIALIZATION_OFFSET) {
+//            scriptSerializationStartOffset = Ar.readInt64()
+//            scriptSerializationEndOffset = Ar.readInt64()
+//        } else {
+//            scriptSerializationStartOffset = 0
+//            scriptSerializationEndOffset = 0
+//        }
     }
 
     fun serialize(Ar: FAssetArchiveWriter) {
@@ -230,7 +240,9 @@ class FObjectExport : FObjectResource {
         serializationBeforeSerializationDependencies: Int,
         createBeforeSerializationDependencies: Int,
         serializationBeforeCreateDependencies: Int,
-        createBeforeCreateDependencies: Int
+        createBeforeCreateDependencies: Int,
+        scriptSerializationStartOffset: Long,
+        scriptSerializationEndOffset: Long
     ) {
         this.classIndex = classIndex
         this.superIndex = superIndex
@@ -252,6 +264,8 @@ class FObjectExport : FObjectResource {
         this.createBeforeSerializationDependencies = createBeforeSerializationDependencies
         this.serializationBeforeCreateDependencies = serializationBeforeCreateDependencies
         this.createBeforeCreateDependencies = createBeforeCreateDependencies
+//        this.scriptSerializationStartOffset = scriptSerializationStartOffset
+//        this.scriptSerializationEndOffset = scriptSerializationEndOffset
     }
 
     override fun toString() = objectName.text

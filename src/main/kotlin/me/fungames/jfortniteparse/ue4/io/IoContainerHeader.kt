@@ -60,6 +60,33 @@ class FIoContainerHeaderPackageRedirect {
     }
 }
 
+class FIoContainerHeaderSoftPackageReferences {
+    var packageIds: Array<FPackageId>
+    var packageIndecies: Array<Byte>
+    var bContainsSoftPackageReferences: Boolean
+
+    constructor(Ar: FArchive) {
+        bContainsSoftPackageReferences = Ar.readBoolean()
+        if (bContainsSoftPackageReferences) {
+            packageIds = Ar.readTArray { FPackageId(Ar) }
+            packageIndecies = Ar.readTArray { Ar.readInt8() }
+        } else {
+            packageIds = emptyArray()
+            packageIndecies = emptyArray()
+        }
+    }
+}
+
+class FIoContainerHeaderSerialInfo {
+    var offset: Long
+    var size: Long
+
+    constructor(Ar: FArchive) {
+        offset = Ar.readInt64()
+        size = Ar.readInt64()
+    }
+}
+
 class FIoContainerHeaderLocalizedPackage {
     var sourcePackageId: FPackageId
     var sourcePackageName: FMappedName?
@@ -76,6 +103,8 @@ object EIoContainerHeaderVersion {
     const val LocalizedPackages = 1
     const val OptionalSegmentPackages = 2
     const val NoExportInfo = 3
+    const val SoftPackageReferences = 4
+    const val SoftPackageReferencesOffset = 5
 
     const val Latest = LocalizedPackages
 }
@@ -94,6 +123,8 @@ class FIoContainerHeader {
     var localizedPackages: Array<FIoContainerHeaderLocalizedPackage>? = null
     var culturePackageMap: FCulturePackageMap? = null
     var packageRedirects: Array<FIoContainerHeaderPackageRedirect>
+    var softPackageReferences: FIoContainerHeaderSoftPackageReferences? = null
+    var softPackageReferencesSerialInfo: FIoContainerHeaderSerialInfo? = null
 
     constructor(Ar: FArchive) {
         var version = if (Ar.game >= GAME_UE5_BASE) EIoContainerHeaderVersion.Initial else EIoContainerHeaderVersion.BeforeVersionWasAdded
@@ -136,5 +167,10 @@ class FIoContainerHeader {
             culturePackageMap = Ar.readTMap { Ar.readString() to Ar.readTArray { FIoContainerHeaderPackageRedirect(Ar, version) } }
         }
         packageRedirects = Ar.readTArray { FIoContainerHeaderPackageRedirect(Ar, version) }
+        if (version == EIoContainerHeaderVersion.SoftPackageReferences) {
+            softPackageReferences = FIoContainerHeaderSoftPackageReferences(Ar)
+        } else if (version >= EIoContainerHeaderVersion.SoftPackageReferencesOffset) {
+            softPackageReferencesSerialInfo = FIoContainerHeaderSerialInfo(Ar)
+        }
     }
 }

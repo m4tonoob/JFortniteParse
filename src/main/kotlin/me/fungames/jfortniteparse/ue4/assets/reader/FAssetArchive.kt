@@ -7,6 +7,7 @@ import me.fungames.jfortniteparse.ue4.assets.Package
 import me.fungames.jfortniteparse.ue4.assets.PakPackage
 import me.fungames.jfortniteparse.ue4.assets.exports.UObject
 import me.fungames.jfortniteparse.ue4.assets.util.PayloadType
+import me.fungames.jfortniteparse.ue4.objects.uobject.EPackageFlags
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
 import me.fungames.jfortniteparse.ue4.objects.uobject.FPackageIndex
 import me.fungames.jfortniteparse.ue4.reader.FByteArchive
@@ -24,6 +25,7 @@ open class FAssetArchive(data: ByteBuffer, val provider: FileProvider?, val pkgN
     var uassetSize = 0
     var uexpSize = 0
     var bulkDataStartOffset = 0
+//    var hasUnversionedProperties = (owner.flags and EPackageFlags.PKG_UnversionedProperties.value) != 0
 
     open fun getPayload(type: PayloadType) = payloads[type] ?: FByteArchive(ByteArray(0))
     fun addPayload(type: PayloadType, payload: FAssetArchive) {

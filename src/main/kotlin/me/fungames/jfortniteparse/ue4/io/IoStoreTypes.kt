@@ -294,3 +294,13 @@ class FBulkDataMapEntry {
         Ar.seek(start + SIZE)
     }
 }
+
+class FZenPackageCellOffsets {
+    var cellImportMapOffset: Int
+    var cellExportMapOffset: Int
+
+    constructor(Ar: FArchive) {
+        cellImportMapOffset = Ar.readInt32()
+        cellExportMapOffset = Ar.readInt32()
+    }
+}

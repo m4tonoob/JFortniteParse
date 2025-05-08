@@ -1,11 +1,16 @@
 package me.fungames.jfortniteparse.ue4.reader
 
 import me.fungames.jfortniteparse.ue4.versions.VersionContainer
+import org.slf4j.LoggerFactory
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.min
 
 open class FByteArchive(val data: ByteBuffer, versions: VersionContainer = VersionContainer.DEFAULT) : FArchive(versions) {
+    companion object {
+        private val LOGGER = LoggerFactory.getLogger(FByteArchive::class.java)
+    }
+    
     init {
         data.order(ByteOrder.LITTLE_ENDIAN)
     }
@@ -33,8 +38,23 @@ open class FByteArchive(val data: ByteBuffer, versions: VersionContainer = Versi
     }
 
     override fun skip(n: Long): Long {
-        //rangeCheck(pos + n.toInt())
-        this.pos += n.toInt()
+        // Safely handle possible integer overflow
+        val nInt = n.toInt()
+        if (nInt < 0) {
+            // Log a warning but don't crash
+            LOGGER.warn("Attempting to skip a negative amount: $nInt, current pos: $pos, size: $size")
+            return 0
+        }
+        
+        // Ensure we don't exceed buffer limits
+        val newPos = pos + nInt
+        if (newPos < 0 || newPos > size) {
+            // Log a warning but don't crash
+            LOGGER.warn("Skip would result in invalid position: $newPos, current pos: $pos, size: $size")
+            return 0
+        }
+        
+        this.pos = newPos
         return n
     }
 

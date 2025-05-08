@@ -25,7 +25,7 @@ open class FSoftObjectPath {
         } else {
             Ar.readFName()
         }
-        subPathString = Ar.readString()
+        subPathString = Ar.readString() // uhhh yeah i cba rn lol TODO: https://github.com/FabianFG/CUE4Parse/commit/b9b1289fef1ab37cb3a7079a6050939b1ff80ca9
     }
 
     fun serialize(Ar: FArchiveWriter) {

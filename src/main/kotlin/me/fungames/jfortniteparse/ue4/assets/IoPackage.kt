@@ -70,6 +70,12 @@ class IoPackage : Package {
             }
             cookedHeaderSize = summary.cookedHeaderSize.toInt()
 
+            if (!summary.bHasVersioningInfo && versions.ver >= EUnrealEngineObjectUE5Version.VERSE_CELLS) {
+                Ar.skip(8)
+            }
+
+            var cellOffsets = FZenPackageCellOffsets(Ar)
+
             // Name map
             nameMap = FNameMap()
             nameMap.load(Ar, FMappedName.EType.Package)
@@ -106,8 +112,10 @@ class IoPackage : Package {
             exportMap = Array(exportCount) { FExportMapEntry(Ar) }
             exportsLazy = (arrayOfNulls<Lazy<UObject>>(exportCount) as Array<Lazy<UObject>>).toMutableList()
 
+            Ar.seek(cellOffsets.cellImportMapOffset)
+
             // Export bundle entries
-            Ar.seek(summary.exportBundleEntriesOffset)
+//            Ar.seek(summary.exportBundleEntriesOffset)
             exportBundleEntries = Array(exportCount * 2) { FExportBundleEntry(Ar) }
 
             if (Ar.game < GAME_UE5(2)) {

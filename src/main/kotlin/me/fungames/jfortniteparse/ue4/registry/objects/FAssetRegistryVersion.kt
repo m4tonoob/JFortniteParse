@@ -63,6 +63,10 @@ class FAssetRegistryVersion(Ar: FArchive) : Comparable<FAssetRegistryVersion.Typ
         AssetPackageDataHasPackageLocation,
         /** Replaced 2 byte wide string with UTF8 String */
         MarshalledTextAsUTF8String,
+        /** Replaced FAssetPackageData::PackageGuid with PackageSavedHash */
+        PackageSavedHash,
+        /** FPackageDependencyData::LoadDependenciesFromPackageHeader changed how it calculates PackageDependencies */
+        ExternalActorToWorldIsEditorOnly,
     }
 
     val guid = FGuid(Ar)
