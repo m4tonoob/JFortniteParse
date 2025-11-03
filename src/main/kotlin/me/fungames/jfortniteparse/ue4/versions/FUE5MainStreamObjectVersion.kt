@@ -320,8 +320,11 @@ object FUE5MainStreamObjectVersion {
     // New default for number of attributes on 2d grids
     const val NiagaraGrid2DDefaultUnnamedAttributesZero = 103
 
+    // Add property tag extension and overridable serialization
+    const val PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION = 104
+
     // -----<new versions can be added above this line>-------------------------------------------------
-    const val LatestVersion = NiagaraGrid2DDefaultUnnamedAttributesZero
+    const val LatestVersion = PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION
 
     @JvmField val GUID = FGuid(0x697DD581u, 0xE64f41ABu, 0xAA4A51ECu, 0xBEB7B628u)
 

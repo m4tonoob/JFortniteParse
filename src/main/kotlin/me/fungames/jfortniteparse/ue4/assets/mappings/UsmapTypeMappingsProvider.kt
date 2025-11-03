@@ -72,6 +72,9 @@ open class UsmapTypeMappingsProvider(private val load: () -> FArchive) : TypeMap
                 type.innerType = deserializePropData(Ar)
                 type.valueType = deserializePropData(Ar)
             }
+            else -> {
+                // No additional data needed for other property types
+            }
         }
         if (!type.structName.isNone()) {
             type.structClass = lazy { mappings.types[type.structName.text]!! }
@@ -88,7 +91,13 @@ open class UsmapTypeMappingsProvider(private val load: () -> FArchive) : TypeMap
         mappings.enums = Ar.readTMap {
             val enumName = Ar.readFName().text
             val enumValuesSize = if (Ar.ver >= EUsmapVersion.LargeEnums.ordinal) Ar.readUInt16().toInt() else Ar.read()
-            val enumValues = List(enumValuesSize) { Ar.readFName().text }
+            val enumValues = List(enumValuesSize) {
+                // Version 4+ (Utf8AndAnsiStrProps) stores explicit int64 values BEFORE the name
+                if (Ar.ver >= EUsmapVersion.Utf8AndAnsiStrProps.ordinal) {
+                    Ar.readInt64() // Skip the explicit value
+                }
+                Ar.readFName().text
+            }
             enumName to enumValues
         }
         repeat(Ar.readInt32()) {

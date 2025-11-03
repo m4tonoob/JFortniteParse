@@ -29,7 +29,15 @@ open class GameFile(val path: String = "", val pos: Long = 0L, val size: Long = 
     fun getExtension() = path.substringAfterLast('.')
     fun isUE4Package() = getExtension().run { this == "uasset" || this == "umap" }
     fun isLocres() = getExtension() == "locres"
-    fun isAssetRegistry() = getName().run { startsWith("AssetRegistry") && endsWith(".bin") }
+    fun isAssetRegistry(): Boolean {
+        val name = getName()
+        // Remove null characters (char code 0) that come from PAK v12 directory index
+        val cleaned = name.replace("\u0000", "").trim()
+        val starts = cleaned.startsWith("AssetRegistry")
+        val ends = cleaned.endsWith(".bin")
+        val result = starts && ends
+        return result
+    }
 
     fun hasUexp() = ::uexp.isInitialized
     fun hasUbulk() = ubulk != null

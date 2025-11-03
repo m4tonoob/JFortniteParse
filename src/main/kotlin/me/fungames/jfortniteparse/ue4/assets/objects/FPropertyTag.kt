@@ -6,12 +6,23 @@ import me.fungames.jfortniteparse.ue4.assets.reader.FAssetArchive
 import me.fungames.jfortniteparse.ue4.assets.writer.FAssetArchiveWriter
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
-import me.fungames.jfortniteparse.ue4.versions.VER_UE4_ARRAY_PROPERTY_INNER_TAGS
-import me.fungames.jfortniteparse.ue4.versions.VER_UE4_PROPERTY_GUID_IN_PROPERTY_TAG
-import me.fungames.jfortniteparse.ue4.versions.VER_UE4_PROPERTY_TAG_SET_MAP_SUPPORT
-import me.fungames.jfortniteparse.ue4.versions.VER_UE4_STRUCT_GUID_IN_PROPERTY_TAG
+import me.fungames.jfortniteparse.ue4.versions.*
 import me.fungames.jfortniteparse.util.INDEX_NONE
 import java.lang.reflect.Type
+
+/**
+ * Property tag extension flags
+ */
+enum class EPropertyTagExtension(val value: Int) {
+    NoExtension(0),
+    OverridableInformation(1);
+
+    companion object {
+        fun hasFlag(flags: Int, flag: EPropertyTagExtension): Boolean {
+            return (flags and flag.value) != 0
+        }
+    }
+}
 
 /**
  * A tag describing a class property, to aid in serialization.
@@ -82,6 +93,15 @@ class FPropertyTag {
                 hasPropertyGuid = Ar.readFlag()
                 if (hasPropertyGuid)
                     propertyGuid = FGuid(Ar)
+            }
+
+            // Property tag extensions for overridable serialization
+            if (FUE5MainStreamObjectVersion.get(Ar) >= FUE5MainStreamObjectVersion.PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
+                val tagExtensions = Ar.read()
+                if (EPropertyTagExtension.hasFlag(tagExtensions, EPropertyTagExtension.OverridableInformation)) {
+                    val overrideOperation = Ar.read() // EOverriddenPropertyOperation
+                    val bExperimentalOverridableLogic = Ar.readBoolean()
+                }
             }
 
             typeData = PropertyType(this)

@@ -6,11 +6,13 @@ import me.fungames.jfortniteparse.exceptions.InvalidAesKeyException
 import me.fungames.jfortniteparse.exceptions.ParserException
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_Latest
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_PathHashIndex
+import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_V12
 import me.fungames.jfortniteparse.ue4.pak.objects.FPakCompressedBlock
 import me.fungames.jfortniteparse.ue4.pak.objects.FPakEntry
 import me.fungames.jfortniteparse.ue4.pak.objects.FPakInfo
 import me.fungames.jfortniteparse.ue4.pak.reader.FPakArchive
 import me.fungames.jfortniteparse.ue4.pak.reader.FPakFileArchive
+import me.fungames.jfortniteparse.ue4.reader.FArchive
 import me.fungames.jfortniteparse.ue4.reader.FByteArchive
 import me.fungames.jfortniteparse.ue4.versions.VersionContainer
 import me.fungames.jfortniteparse.ue4.vfs.AbstractAesVfsReader
@@ -173,11 +175,22 @@ class PakFileReader : AbstractAesVfsReader {
             throw ParserException("Corrupt pak PrimaryIndex detected!")
 
         val directoryIndexAr = readIndexData(directoryIndexOffset, directoryIndexSize, directoryIndexHash)
-        val directoryIndex = directoryIndexAr.readTMap {
-            it.readString() to it.readTMap { it2 ->
-                it2.readString() to it2.readInt32()
+        // PAK v12 changed string format in directory index - strings are no longer null-terminated
+        logger.info("Reading directory index for $name, version ${pakInfo.version}, expected file count: $fileCount")
+        val directoryIndex = if (pakInfo.version >= PakVersion_V12) {
+            directoryIndexAr.readTMap {
+                readStringV12(it) to it.readTMap { it2 ->
+                    readStringV12(it2) to it2.readInt32()
+                }
+            }
+        } else {
+            directoryIndexAr.readTMap {
+                it.readString() to it.readTMap { it2 ->
+                    it2.readString() to it2.readInt32()
+                }
             }
         }
+        logger.info("Directory index loaded: ${directoryIndex.size} directories")
 
         val encodedPakEntriesAr = FByteArchive(encodedPakEntries)
         val begin = encodedPakEntriesAr.pos()
@@ -216,6 +229,25 @@ class PakFileReader : AbstractAesVfsReader {
         }
         this.files = files
         return files
+    }
+
+    /**
+     * Read string without null terminator for PAK v12+
+     * In v12, directory index strings no longer have null terminators
+     */
+    private fun readStringV12(Ar: FArchive): String {
+        val length = Ar.readInt32()
+        if (length < -131072 || length > 131072)
+            throw ParserException("Invalid String length '$length'", Ar)
+        return if (length < 0) {
+            // UTF-16
+            val utf16length = -length
+            val data = IntArray(utf16length) { Ar.readUInt16().toInt() }
+            String(data, 0, utf16length)
+        } else {
+            // UTF-8
+            if (length == 0) "" else Charsets.UTF_8.decode(Ar.readBuffer(length)).toString()
+        }
     }
 
     private fun readBitEntry(Ar: FByteArchive): FPakEntry {
