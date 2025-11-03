@@ -67,6 +67,10 @@ class FAssetRegistryVersion(Ar: FArchive) : Comparable<FAssetRegistryVersion.Typ
         PackageSavedHash,
         /** FPackageDependencyData::LoadDependenciesFromPackageHeader changed how it calculates PackageDependencies */
         ExternalActorToWorldIsEditorOnly,
+        /** Added support for soft object path serialization changes (UE 5.5+) */
+        SoftObjectPathSerializationChanges,
+        /** Support for additional dependency types (UE 5.5+) */
+        AdditionalDependencyTypes,
     }
 
     val guid = FGuid(Ar)
