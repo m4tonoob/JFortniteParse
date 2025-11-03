@@ -239,7 +239,7 @@ class PakFileReader : AbstractAesVfsReader {
         val length = Ar.readInt32()
         if (length < -131072 || length > 131072)
             throw ParserException("Invalid String length '$length'", Ar)
-        return if (length < 0) {
+        val rawString = if (length < 0) {
             // UTF-16
             val utf16length = -length
             val data = IntArray(utf16length) { Ar.readUInt16().toInt() }
@@ -248,6 +248,8 @@ class PakFileReader : AbstractAesVfsReader {
             // UTF-8
             if (length == 0) "" else Charsets.UTF_8.decode(Ar.readBuffer(length)).toString()
         }
+        // Remove null characters that appear in PAK v12 directory index
+        return rawString.replace("\u0000", "")
     }
 
     private fun readBitEntry(Ar: FByteArchive): FPakEntry {
