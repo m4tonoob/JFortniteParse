@@ -246,6 +246,8 @@ class IoChunkToc {
 
     constructor(file: File) : this(FByteArchive(file.readBytes()))
 
+    constructor(bytes: ByteArray) : this(FByteArchive(bytes))
+
     constructor(Ar: FArchive) {
         header = FOnDemandTocHeader(Ar)
 
