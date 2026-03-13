@@ -66,7 +66,26 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     }
 
     protected open fun mount(reader: AbstractAesVfsReader) {
-        reader.readIndex().associateByTo(files) { it.path.toLowerCase() }
+        val gameFiles = reader.readIndex()
+        for (gameFile in gameFiles) {
+            val fullPath = gameFile.path.toLowerCase()
+            files[fullPath] = gameFile
+            // Register virtual path alias for Game Feature plugin content.
+            // Files indexed as "fortnitegame/plugins/gamefeatures/brcosmetics/content/ui/..."
+            // also need to be findable as "brcosmetics/ui/..." (the UE virtual mount path).
+            val gfMarker = "/plugins/gamefeatures/"
+            val gfIdx = fullPath.indexOf(gfMarker)
+            if (gfIdx >= 0) {
+                val afterGF = fullPath.substring(gfIdx + gfMarker.length) // "brcosmetics/content/ui/..."
+                val contentIdx = afterGF.indexOf("/content/")
+                if (contentIdx >= 0) {
+                    val featureName = afterGF.substring(0, contentIdx) // "brcosmetics"
+                    val remainder = afterGF.substring(contentIdx + "/content".length) // "/ui/..."
+                    val virtualPath = featureName + remainder // "brcosmetics/ui/..."
+                    files[virtualPath] = gameFile
+                }
+            }
+        }
         mountedPaks.add(reader)
         if (reader is FIoStoreReaderImpl) {
             if (reader.name == "global") {
@@ -81,9 +100,10 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
 
     override fun loadGameFile(packageId: FPackageId): IoPackage? = runCatching {
         val storeEntry = globalPackageStore.value.findStoreEntry(packageId)
-            ?: return null//throw NotFoundException("The package to load does not exist on disk or in the loader")
+            ?: return null
         val chunkType = if (game >= GAME_UE5_BASE) EIoChunkType5.ExportBundleData else EIoChunkType.ExportBundleData
-        val ioBuffer = saveChunk(FIoChunkId(packageId.value(), 0u, chunkType))
+        val chunkId = FIoChunkId(packageId.value(), 0u, chunkType)
+        val ioBuffer = saveChunk(chunkId)
         return IoPackage(ioBuffer, packageId, storeEntry, globalPackageStore.value, this, versions)
     }.onFailure { logger.error(it) { "Failed to load package with id 0x%016X".format(packageId.value().toLong()) } }.getOrNull()
 

@@ -66,6 +66,39 @@ class FPackageStore(val provider: PakFileProvider) : FOnContainerMountedListener
 
         //currentCultureNames.add(Locale.getDefault().toString().replace('_', '-'))
         loadContainers(provider.mountedPaks().filterIsInstance<FIoStoreReaderImpl>())
+
+        // Load ContainerHeaders from unlinked on-demand containers (no local reader).
+        // These contain package metadata for streaming content whose chunk data may
+        // still be available in other locally-mounted containers.
+        if (provider is me.fungames.jfortniteparse.fileprovider.DefaultFileProvider) {
+            val unlinked = provider.unlinkedOnDemandContainers
+            if (unlinked.isNotEmpty()) {
+                loadUnlinkedContainerHeaders(unlinked)
+            }
+        }
+    }
+
+    private fun loadUnlinkedContainerHeaders(containers: List<FOnDemandTocContainerEntry>) {
+        for (container in containers) {
+            if (container.header.isEmpty()) continue
+            try {
+                val containerHeader = FIoContainerHeader(FByteArchive(container.header, provider.versions))
+                synchronized(packageNameMapsCritical) {
+                    containerHeader.storeEntries.forEachIndexed { index, containerEntry ->
+                        val packageId = containerHeader.packageIds[index]
+                        storeEntriesMap[packageId] = containerEntry
+                    }
+                    for (redirect in containerHeader.packageRedirects) {
+                        val sourcePackageName = redirect.sourcePackageName?.let { containerHeader.redirectsNameMap.getName(it) } ?: FName.NAME_None
+                        redirectsPackageMap[redirect.sourcePackageId] = sourcePackageName to redirect.targetPackageId
+                    }
+                }
+                LOG_STREAMING.info("Loaded unlinked on-demand ContainerHeader '{}': {} packages, {} redirects",
+                    container.containerName, containerHeader.packageIds.size, containerHeader.packageRedirects.size)
+            } catch (e: Exception) {
+                LOG_STREAMING.error("Failed to parse unlinked ContainerHeader for '{}': {}", container.containerName, e.message)
+            }
+        }
     }
 
     fun loadContainers(containers: List<FIoStoreReaderImpl>) {
@@ -80,11 +113,25 @@ class FPackageStore(val provider: PakFileProvider) : FOnContainerMountedListener
             val loadedContainer = loadedContainers.getOrPut(containerId) { FLoadedContainer() }
             LOG_STREAMING.debug("Loading mounted container ID '0x%016X'".format(containerId.value().toLong()))
 
-            val headerChunkId = FIoChunkId(containerId.value(), 0u, if (provider.game >= GAME_UE5_BASE) EIoChunkType5.ContainerHeader else EIoChunkType.ContainerHeader)
-            val ioBuffer = container.read(headerChunkId)
+            val onDemandHeader = container.onDemandContainer?.header
+            val ioBuffer = if (onDemandHeader != null && onDemandHeader.isNotEmpty()) {
+                LOG_STREAMING.info("Using on-demand header for container '{}' ({} bytes)", container.name, onDemandHeader.size)
+                onDemandHeader
+            } else {
+                val headerChunkId = FIoChunkId(containerId.value(), 0u, if (provider.game >= GAME_UE5_BASE) EIoChunkType5.ContainerHeader else EIoChunkType.ContainerHeader)
+                try {
+                    val buf = container.read(headerChunkId)
+                    LOG_STREAMING.info("Read ContainerHeader from UCAS for '{}' ({} bytes)", container.name, buf.size)
+                    buf
+                } catch (e: Exception) {
+                    LOG_STREAMING.error("Failed to read ContainerHeader for '{}': {}", container.name, e.message)
+                    throw e
+                }
+            }
 
             CompletableFuture.supplyAsync {
                 val containerHeader = FIoContainerHeader(FByteArchive(ioBuffer, provider.versions))
+                LOG_STREAMING.info("Parsed ContainerHeader for '{}': {} packages, {} redirects", container.name, containerHeader.packageIds.size, containerHeader.packageRedirects.size)
                 loadedContainer.containerNameMap = containerHeader.redirectsNameMap
                 loadedContainer.storeEntries = containerHeader.storeEntries
                 synchronized(packageNameMapsCritical) {

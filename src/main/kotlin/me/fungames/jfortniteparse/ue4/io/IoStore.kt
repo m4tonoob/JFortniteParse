@@ -239,6 +239,8 @@ class FIoStoreReaderImpl : AbstractAesVfsReader {
     val tocResource: FIoStoreTocResource
     private val containerFileHandles = mutableListOf<FPakArchive>()
     private var _directoryIndexReader: FIoDirectoryIndexReader? = null
+    /** On-demand container data from .uondemandtoc, provides the container header */
+    var onDemandContainer: FOnDemandTocContainerEntry? = null
     private val directoryIndexReaderLock = Object()
     val directoryIndexReader: FIoDirectoryIndexReader? get() {
         synchronized(directoryIndexReaderLock) {

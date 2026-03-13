@@ -50,7 +50,9 @@ open class FSoftObjectPath {
             "$assetPathName:$subPathString"
         }
 
-    inline fun <reified T> load() = owner?.provider?.loadObject<T>(this)
+    inline fun <reified T> load(): T? {
+        return owner?.provider?.loadObject<T>(this)
+    }
 }
 
 /**
