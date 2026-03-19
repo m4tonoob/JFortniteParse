@@ -66,39 +66,6 @@ class FPackageStore(val provider: PakFileProvider) : FOnContainerMountedListener
 
         //currentCultureNames.add(Locale.getDefault().toString().replace('_', '-'))
         loadContainers(provider.mountedPaks().filterIsInstance<FIoStoreReaderImpl>())
-
-        // Load ContainerHeaders from unlinked on-demand containers (no local reader).
-        // These contain package metadata for streaming content whose chunk data may
-        // still be available in other locally-mounted containers.
-        if (provider is me.fungames.jfortniteparse.fileprovider.DefaultFileProvider) {
-            val unlinked = provider.unlinkedOnDemandContainers
-            if (unlinked.isNotEmpty()) {
-                loadUnlinkedContainerHeaders(unlinked)
-            }
-        }
-    }
-
-    private fun loadUnlinkedContainerHeaders(containers: List<FOnDemandTocContainerEntry>) {
-        for (container in containers) {
-            if (container.header.isEmpty()) continue
-            try {
-                val containerHeader = FIoContainerHeader(FByteArchive(container.header, provider.versions))
-                synchronized(packageNameMapsCritical) {
-                    containerHeader.storeEntries.forEachIndexed { index, containerEntry ->
-                        val packageId = containerHeader.packageIds[index]
-                        storeEntriesMap[packageId] = containerEntry
-                    }
-                    for (redirect in containerHeader.packageRedirects) {
-                        val sourcePackageName = redirect.sourcePackageName?.let { containerHeader.redirectsNameMap.getName(it) } ?: FName.NAME_None
-                        redirectsPackageMap[redirect.sourcePackageId] = sourcePackageName to redirect.targetPackageId
-                    }
-                }
-                LOG_STREAMING.info("Loaded unlinked on-demand ContainerHeader '{}': {} packages, {} redirects",
-                    container.containerName, containerHeader.packageIds.size, containerHeader.packageRedirects.size)
-            } catch (e: Exception) {
-                LOG_STREAMING.error("Failed to parse unlinked ContainerHeader for '{}': {}", container.containerName, e.message)
-            }
-        }
     }
 
     fun loadContainers(containers: List<FIoStoreReaderImpl>) {

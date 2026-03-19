@@ -5,6 +5,7 @@ import me.fungames.jfortniteparse.exceptions.ParserException
 import me.fungames.jfortniteparse.ue4.assets.OnlyAnnotated
 import me.fungames.jfortniteparse.ue4.assets.UProperty
 import me.fungames.jfortniteparse.ue4.assets.objects.FByteBulkData
+import me.fungames.jfortniteparse.ue4.assets.objects.FByteBulkDataHeader
 import me.fungames.jfortniteparse.ue4.assets.reader.FAssetArchive
 import me.fungames.jfortniteparse.ue4.assets.writer.FAssetArchiveWriter
 import me.fungames.jfortniteparse.ue4.objects.core.math.FIntPoint
@@ -32,7 +33,11 @@ class UTexture2D : UTexture() {
         cooked = Ar.readBoolean()
         textures = mutableMapOf()
         if (cooked) {
-            val serializeMipData = Ar.game >= GAME_UE5(2) && Ar.readBoolean() // Present in Fortnite v25.10+
+            // serializeMipData: controls whether mip bulk data is serialized inline.
+            // Default is true (mips always inline). UE5.2+ (including Fortnite v25.10+)
+            // serializes a boolean flag. CUE4Parse gates this at UE5.3, but Fortnite's
+            // custom UE5 fork includes it at UE5.2.
+            val serializeMipData = if (Ar.game >= GAME_UE5(2)) Ar.readBoolean() else true
             while (true) {
                 val pixelFormat = Ar.readFName()
                 if (pixelFormat.isNone()) break
@@ -41,7 +46,7 @@ class UTexture2D : UTexture() {
                     Ar.game >= GAME_UE4(20) -> Ar.readInt64()
                     else -> Ar.readInt32()
                 }
-                textures[FTexturePlatformData(Ar)] = pixelFormat
+                textures[FTexturePlatformData(Ar, serializeMipData)] = pixelFormat
                 if (Ar.relativePos().toLong() != skipOffset) {
                     LOG_JFP.warn("Texture read incorrectly. Current relative pos ${Ar.relativePos()}, skip offset $skipOffset")
                     Ar.seekRelative(skipOffset.toInt())
@@ -85,19 +90,41 @@ class FTexturePlatformData {
     var mips: Array<FTexture2DMipMap>
     var isVirtual: Boolean = false
 
-    constructor(Ar: FAssetArchive) {
-        if (Ar.game >= GAME_UE5_BASE) {
+    constructor(Ar: FAssetArchive, serializeMipData: Boolean = true) {
+        if (Ar.game >= GAME_UE5(2)) {
+            // PlaceholderDerivedData: 1-byte flag (bUsingDerivedData) + 15 bytes padding = 16 total
+            val bUsingDerivedData = Ar.readFlag()
+            if (bUsingDerivedData) {
+                LOG_JFP.warn("FTexturePlatformData with derived data is not supported, skipping 15 bytes")
+            }
+            Ar.skip(15)
+        } else if (Ar.game >= GAME_UE5_BASE) {
             Ar.skip(16)
         }
         sizeX = Ar.readInt32()
         sizeY = Ar.readInt32()
         numSlices = Ar.readInt32()
         pixelFormat = Ar.readString()
+        if (pixelFormat == "PF_BC6H_Signed") pixelFormat = "PF_BC6H"
         firstMip = Ar.readInt32()
         val mipCount = Ar.readInt32()
-        mips = Array(mipCount) { FTexture2DMipMap(Ar) }
+        mips = Array(mipCount) { FTexture2DMipMap(Ar, serializeMipData) }
 
-        if (Ar.versions["VirtualTextures"]) {
+        // UE5.4+: PackedData replaces the old VirtualTextures boolean.
+        // It contains packed flags including isVirtual and HasCpuCopy (bit 29).
+        if (Ar.game >= GAME_UE5(4)) {
+            val packedData = Ar.readUInt32()
+            val hasCpuCopy = (packedData.toInt() and (1 shl 29)) != 0
+            if (hasCpuCopy) {
+                // FSharedImage: SizeX(4) + SizeY(4) + SizeZ(4) + PixelFormat(4) + GammaSpace(1)
+                Ar.skip(17)
+                // RawData: TArray<byte> = int32 count + byte[count]
+                val rawDataCount = Ar.readInt32()
+                if (rawDataCount > 0) {
+                    Ar.skip(rawDataCount.toLong())
+                }
+            }
+        } else if (Ar.versions["VirtualTextures"]) {
             isVirtual = Ar.readBoolean()
             if (isVirtual) {
                 throw ParserException("Texture is virtual, not implemented", Ar)
@@ -142,9 +169,15 @@ class FTexture2DMipMap {
     var sizeZ: Int
     var derivedDataKey: String? = null
 
-    constructor(Ar: FAssetArchive) {
+    constructor(Ar: FAssetArchive, serializeMipData: Boolean = true) {
         cooked = if (Ar.ver >= VER_UE4_TEXTURE_SOURCE_ART_REFACTOR && Ar.game < GAME_UE5_BASE) Ar.readBoolean() else Ar.isFilterEditorOnly
-        data = FByteBulkData(Ar)
+        if (serializeMipData) {
+            data = FByteBulkData(Ar)
+        } else {
+            // Mip data is not serialized inline — create an empty placeholder.
+            // The actual texture data lives in a streaming container or is loaded on-demand.
+            data = FByteBulkData(FByteBulkDataHeader(0, 0L, 0L, 0L), ByteArray(0))
+        }
         sizeX = Ar.readInt32()
         sizeY = Ar.readInt32()
         sizeZ = Ar.readInt32()

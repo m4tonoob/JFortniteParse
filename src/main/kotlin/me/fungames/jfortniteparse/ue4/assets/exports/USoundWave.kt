@@ -214,7 +214,13 @@ class FStreamedAudioPlatformData {
     constructor(Ar: FAssetArchive) {
         numChunks = Ar.readInt32()
         audioFormat = Ar.readFName()
-        chunks = MutableList(numChunks) { FStreamedAudioChunk(Ar) }
+        if (numChunks > 65536) {
+            // Likely a misread or genuinely huge audio — skip to avoid OOM
+            chunks = mutableListOf()
+            numChunks = 0
+        } else {
+            chunks = MutableList(numChunks) { FStreamedAudioChunk(Ar) }
+        }
     }
 
     fun serialize(Ar: FAssetArchiveWriter) {

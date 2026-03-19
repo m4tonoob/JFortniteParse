@@ -80,7 +80,8 @@ enum class EValueType {
     Name,
     NumberlessExportPath,
     ExportPath,
-    LocalizedText
+    LocalizedText,
+    Unknown7 // v40+ uses 3-bit type field, value 7 observed in Fortnite v40.00
 }
 
 class FValueId {
@@ -100,7 +101,10 @@ class FValueId {
     constructor(Ar: FArchive) : this(Ar.readUInt32())
 
     constructor(int: UInt) {
-        type = EValueType.values()[(int shl INDEX_BITS) shr INDEX_BITS]
+        val idx = (int shl INDEX_BITS) shr INDEX_BITS
+        val idxToUse: Int = if (idx.toInt() >= EValueType.values().size) EValueType.values().size - 1 else idx.toInt()
+        type = EValueType.values()[idxToUse]
+
         index = int shr TYPE_BITS
     }
 
@@ -122,6 +126,7 @@ class FValueHandle(val store: FStore, val id: FValueId) {
             EValueType.NumberlessExportPath -> store.numberlessExportPaths[index].toString()
             EValueType.ExportPath -> store.exportPaths[index].toString()
             EValueType.LocalizedText -> store.texts[index].toString()
+            else -> "" // v40+ new type, not yet decoded
         }
     }
 }

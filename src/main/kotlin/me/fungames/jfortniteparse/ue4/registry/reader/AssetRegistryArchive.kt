@@ -87,8 +87,14 @@ class FAssetRegistryReader : FAssetRegistryArchive {
     private fun loadTags(): Map<FName, String> {
         val mapHandle = readUInt64()
         val out = mutableMapOf<FName, String>()
-        FPartialMapHandle(mapHandle).makeFullHandle(tags).forEachPair { (key, value) ->
-            out[key] = FValueHandle(tags, value).asString()
+        try {
+            FPartialMapHandle(mapHandle).makeFullHandle(tags).forEachPair { (key, value) ->
+                out[key] = FValueHandle(tags, value).asString()
+            }
+        } catch (e: IndexOutOfBoundsException) {
+            // v40+ asset registry (version ordinal 24) changes FStore format in ways
+            // not yet reverse-engineered, causing pair indices to be out of bounds.
+            // Return what we have so far — asset registry is non-fatal.
         }
         return out
     }

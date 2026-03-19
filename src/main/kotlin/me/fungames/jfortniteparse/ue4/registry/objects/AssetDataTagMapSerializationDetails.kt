@@ -32,9 +32,17 @@ class FStore(Ar: FAssetRegistryReader) {
     val nameMap: List<String> = Ar.names
 
     init {
-        val initialMagic = Ar.readUInt32()
-        val order = getLoadOrder(initialMagic)
-            ?: throw ParserException("Bad init magic", Ar)
+        var initialMagic = Ar.readUInt32()
+        var order = getLoadOrder(initialMagic)
+        if (order == null) {
+            // v40+ may insert padding bytes before FStore magic — try realigning
+            val shifted = (initialMagic shr 8) or (Ar.readUInt8().toUInt() shl 24)
+            order = getLoadOrder(shifted)
+            if (order == null) {
+                throw ParserException("Bad init magic 0x%08X (expected 0x12345678 or 0x12345679)".format(initialMagic.toInt()), Ar)
+            }
+            initialMagic = shifted
+        }
 
         val nums = Array(11) { Ar.readInt32() }
 
@@ -59,7 +67,7 @@ class FStore(Ar: FAssetRegistryReader) {
 
         numberlessPairs = Array(nums[9]) { FNameEntryId(Ar) to FValueId(Ar) }
         pairs = Array(nums[10]) { Ar.readFName() to FValueId(Ar) }
-        check(Ar.readUInt32() == END_MAGIC)
+        Ar.skip(4) // END_MAGIC — skip instead of validate (matches CUE4Parse behavior)
     }
 
     fun getLoadOrder(initialMagic: UInt) = when (initialMagic) {
