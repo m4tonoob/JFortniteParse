@@ -101,10 +101,23 @@ class FPackageStore(val provider: PakFileProvider) : FOnContainerMountedListener
                 LOG_STREAMING.info("Parsed ContainerHeader for '{}': {} packages, {} redirects", container.name, containerHeader.packageIds.size, containerHeader.packageRedirects.size)
                 loadedContainer.containerNameMap = containerHeader.redirectsNameMap
                 loadedContainer.storeEntries = containerHeader.storeEntries
+                val isOnDemand = container.onDemandContainer != null
+                val isCdnOnly = container.name.startsWith("on-demand/")
                 synchronized(packageNameMapsCritical) {
-                    loadedContainer.storeEntries.forEachIndexed { index, containerEntry ->
-                        val packageId = containerHeader.packageIds[index]
-                        storeEntriesMap[packageId] = containerEntry
+                    when {
+                        isCdnOnly -> {} // Skip CDN-only containers entirely
+                        isOnDemand -> { // Linked on-demand (local UCAS) — putIfAbsent so local paks win
+                            loadedContainer.storeEntries.forEachIndexed { index, containerEntry ->
+                                val packageId = containerHeader.packageIds[index]
+                                storeEntriesMap.putIfAbsent(packageId, containerEntry)
+                            }
+                        }
+                        else -> { // Regular local containers
+                            loadedContainer.storeEntries.forEachIndexed { index, containerEntry ->
+                                val packageId = containerHeader.packageIds[index]
+                                storeEntriesMap[packageId] = containerEntry
+                            }
+                        }
                     }
 
                     /*val localizedPackages = currentCultureNames.firstNotNullOfOrNull { containerHeader.culturePackageMap[it] }

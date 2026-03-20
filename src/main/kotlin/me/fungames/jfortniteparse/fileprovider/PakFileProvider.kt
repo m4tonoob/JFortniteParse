@@ -12,6 +12,7 @@ import me.fungames.jfortniteparse.ue4.reader.FByteArchive
 import me.fungames.jfortniteparse.ue4.versions.GAME_UE5_BASE
 import me.fungames.jfortniteparse.ue4.vfs.AbstractAesVfsReader
 import me.fungames.jfortniteparse.util.printAesKey
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -36,6 +37,8 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     // On-demand CDN support
     protected val onDemandTocs = mutableListOf<IoChunkToc>()
     val unlinkedOnDemandContainers = mutableListOf<FOnDemandTocContainerEntry>()
+    /** Directory to cache downloaded CDN chunks on disk. Set before calling processOnDemandContainers(). */
+    var chunkDownloadDir: File? = null
     open fun keys(): Map<FGuid, ByteArray> = keys
     fun keysStr(): Map<FGuid, String> = keys.mapValues { it.value.printAesKey() }
     open fun requiredKeys(): List<FGuid> = requiredKeys
@@ -78,23 +81,29 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     }
 
     protected open fun mount(reader: AbstractAesVfsReader) {
-        val gameFiles = reader.readIndex()
-        for (gameFile in gameFiles) {
-            val fullPath = gameFile.path.toLowerCase()
-            files[fullPath] = gameFile
-            // Register virtual path alias for Game Feature plugin content.
-            // Files indexed as "fortnitegame/plugins/gamefeatures/brcosmetics/content/ui/..."
-            // also need to be findable as "brcosmetics/ui/..." (the UE virtual mount path).
-            val gfMarker = "/plugins/gamefeatures/"
-            val gfIdx = fullPath.indexOf(gfMarker)
-            if (gfIdx >= 0) {
-                val afterGF = fullPath.substring(gfIdx + gfMarker.length) // "brcosmetics/content/ui/..."
-                val contentIdx = afterGF.indexOf("/content/")
-                if (contentIdx >= 0) {
-                    val featureName = afterGF.substring(0, contentIdx) // "brcosmetics"
-                    val remainder = afterGF.substring(contentIdx + "/content".length) // "/ui/..."
-                    val virtualPath = featureName + remainder // "brcosmetics/ui/..."
-                    files[virtualPath] = gameFile
+        // Skip file indexing for on-demand readers — their 26K+ files would pollute
+        // the global files map, causing massive slowdowns and breaking searches.
+        // The reader still gets added to mountedPaks so saveChunk() can find chunks.
+        val isOnDemand = reader is FIoStoreReaderImpl && reader.onDemandContainer != null
+        if (!isOnDemand) {
+            val gameFiles = reader.readIndex()
+            for (gameFile in gameFiles) {
+                val fullPath = gameFile.path.toLowerCase()
+                files[fullPath] = gameFile
+                // Register virtual path alias for Game Feature plugin content.
+                // Files indexed as "fortnitegame/plugins/gamefeatures/brcosmetics/content/ui/..."
+                // also need to be findable as "brcosmetics/ui/..." (the UE virtual mount path).
+                val gfMarker = "/plugins/gamefeatures/"
+                val gfIdx = fullPath.indexOf(gfMarker)
+                if (gfIdx >= 0) {
+                    val afterGF = fullPath.substring(gfIdx + gfMarker.length) // "brcosmetics/content/ui/..."
+                    val contentIdx = afterGF.indexOf("/content/")
+                    if (contentIdx >= 0) {
+                        val featureName = afterGF.substring(0, contentIdx) // "brcosmetics"
+                        val remainder = afterGF.substring(contentIdx + "/content".length) // "/ui/..."
+                        val virtualPath = featureName + remainder // "brcosmetics/ui/..."
+                        files[virtualPath] = gameFile
+                    }
                 }
             }
         }
@@ -203,7 +212,7 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
                     val path = "on-demand/${container.containerName}"
 
                     val reader = FIoStoreReaderImpl(utocArchive, path, { _ ->
-                        OnDemandPakArchive(mappings, ON_DEMAND_CDN_BASE, toc.header.chunksDirectory, cache)
+                        OnDemandPakArchive(mappings, ON_DEMAND_CDN_BASE, toc.header.chunksDirectory, cache, chunkDownloadDir)
                     }, ioStoreTocReadOptions)
 
                     reader.customEncryption = customEncryption
@@ -288,8 +297,23 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     }
 
     override fun saveChunk(chunkId: FIoChunkId): ByteArray {
+        // Try local readers first (fast disk reads), then CDN-only readers as fallback.
+        // Linked on-demand readers (onDemandContainer set but local UCAS) are treated as local.
         for (reader in mountedPaks) {
             if (reader !is FIoStoreReaderImpl) continue
+            if (reader.name.startsWith("on-demand/")) continue
+            try {
+                return reader.read(chunkId)
+            } catch (e: FIoStatusException) {
+                if (e.status.errorCode != EIoErrorCode.NotFound) {
+                    throw e
+                }
+            }
+        }
+        // Fallback: try CDN-only readers
+        for (reader in mountedPaks) {
+            if (reader !is FIoStoreReaderImpl) continue
+            if (!reader.name.startsWith("on-demand/")) continue
             try {
                 return reader.read(chunkId)
             } catch (e: FIoStatusException) {

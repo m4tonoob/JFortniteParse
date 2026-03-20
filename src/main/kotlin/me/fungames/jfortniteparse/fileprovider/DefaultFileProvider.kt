@@ -26,9 +26,10 @@ open class DefaultFileProvider : PakFileProvider, Closeable {
     override val mountedPaks = CopyOnWriteArrayList<AbstractAesVfsReader>()
 
     @JvmOverloads
-    constructor(folder: File, versions: VersionContainer = VersionContainer.DEFAULT) {
+    constructor(folder: File, versions: VersionContainer = VersionContainer.DEFAULT, chunkCacheDir: File? = null) {
         this.folder = folder
         this.versions = versions
+        this.chunkDownloadDir = chunkCacheDir
         scanFiles(folder)
         processOnDemandContainers()
     }

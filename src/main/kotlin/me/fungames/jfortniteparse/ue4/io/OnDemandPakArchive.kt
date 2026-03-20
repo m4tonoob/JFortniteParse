@@ -2,6 +2,7 @@ package me.fungames.jfortniteparse.ue4.io
 
 import me.fungames.jfortniteparse.ue4.pak.reader.FPakArchive
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +33,8 @@ class OnDemandPakArchive(
     private val mappings: List<CdnChunkMapping>,
     private val cdnBase: String,
     private val chunksDirectory: String,
-    private val cache: ConcurrentHashMap<String, ByteArray>
+    private val cache: ConcurrentHashMap<String, ByteArray>,
+    private val diskCacheDir: File? = null
 ) : FPakArchive("on-demand") {
 
     companion object {
@@ -43,7 +45,7 @@ class OnDemandPakArchive(
     private var currentPos: Long = 0
 
     override fun clone(): OnDemandPakArchive {
-        val clone = OnDemandPakArchive(mappings, cdnBase, chunksDirectory, cache)
+        val clone = OnDemandPakArchive(mappings, cdnBase, chunksDirectory, cache, diskCacheDir)
         clone.currentPos = currentPos
         return clone
     }
@@ -64,8 +66,12 @@ class OnDemandPakArchive(
                 "No CDN chunk mapping for UCAS offset $currentPos")
 
         val data = cache.getOrPut(mapping.hashHex) {
-            logger.info("Downloading on-demand chunk {} from CDN...", mapping.hashHex)
-            downloadChunk(mapping.hashHex)
+            loadFromDisk(mapping.hashHex) ?: run {
+                logger.info("Downloading on-demand chunk {} from CDN...", mapping.hashHex)
+                val bytes = downloadChunk(mapping.hashHex)
+                saveToDisk(mapping.hashHex, bytes)
+                bytes
+            }
         }
 
         val localOffset = (currentPos - mapping.ucasStartOffset).toInt()
@@ -129,6 +135,28 @@ class OnDemandPakArchive(
             return connection.inputStream.readBytes()
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun loadFromDisk(hashHex: String): ByteArray? {
+        if (diskCacheDir == null) return null
+        val file = File(diskCacheDir, "$hashHex.iochunk")
+        if (!file.exists()) return null
+        return try {
+            file.readBytes()
+        } catch (e: Exception) {
+            logger.warn("Failed to read cached chunk {}: {}", hashHex, e.message)
+            null
+        }
+    }
+
+    private fun saveToDisk(hashHex: String, data: ByteArray) {
+        if (diskCacheDir == null) return
+        try {
+            diskCacheDir.mkdirs()
+            File(diskCacheDir, "$hashHex.iochunk").writeBytes(data)
+        } catch (e: Exception) {
+            logger.warn("Failed to cache chunk {} to disk: {}", hashHex, e.message)
         }
     }
 }
