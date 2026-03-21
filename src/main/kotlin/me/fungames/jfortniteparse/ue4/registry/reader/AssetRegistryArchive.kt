@@ -63,6 +63,13 @@ class FAssetRegistryReader : FAssetRegistryArchive {
 
     override fun clone() = FAssetRegistryReader(wrappedAr, header, names, tags)
 
+    fun alignPosInArchive() {
+        if (version < FAssetRegistryVersion.Type.MemoryMappedTagDataStore) return
+        val pos = wrappedAr.pos()
+        val aligned = (pos + 15) and 15.inv()
+        if (aligned != pos) wrappedAr.seek(aligned)
+    }
+
     override fun readFName(): FName {
         var index = readUInt32()
         var number = NAME_NO_NUMBER_INTERNAL

@@ -67,10 +67,12 @@ class FAssetRegistryVersion(Ar: FArchive) : Comparable<FAssetRegistryVersion.Typ
         PackageSavedHash,
         /** FPackageDependencyData::LoadDependenciesFromPackageHeader changed how it calculates PackageDependencies */
         ExternalActorToWorldIsEditorOnly,
-        /** Added support for soft object path serialization changes (UE 5.5+) */
-        SoftObjectPathSerializationChanges,
-        /** Support for additional dependency types (UE 5.5+) */
-        AdditionalDependencyTypes,
+        /** CookRule property added to EDependencyProperties for EDependencyCategory::Manage */
+        ManageDependenciesCookRule,
+        /** 64-bit arrays for strings */
+        TagSetMapSupports64BitStringNum,
+        /** Tag data store is now memory mapped (requires 16-byte alignment) */
+        MemoryMappedTagDataStore,
     }
 
     val guid = FGuid(Ar)

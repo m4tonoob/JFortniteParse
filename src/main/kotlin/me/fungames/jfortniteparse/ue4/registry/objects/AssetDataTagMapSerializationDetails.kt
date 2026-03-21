@@ -32,42 +32,58 @@ class FStore(Ar: FAssetRegistryReader) {
     val nameMap: List<String> = Ar.names
 
     init {
-        var initialMagic = Ar.readUInt32()
-        var order = getLoadOrder(initialMagic)
-        if (order == null) {
-            // v40+ may insert padding bytes before FStore magic — try realigning
-            val shifted = (initialMagic shr 8) or (Ar.readUInt8().toUInt() shl 24)
-            order = getLoadOrder(shifted)
-            if (order == null) {
-                throw ParserException("Bad init magic 0x%08X (expected 0x12345678 or 0x12345679)".format(initialMagic.toInt()), Ar)
-            }
-            initialMagic = shifted
-        }
+        Ar.alignPosInArchive()
+
+        val initialMagic = Ar.readUInt32()
+        val order = getLoadOrder(initialMagic)
+            ?: throw ParserException("Bad init magic 0x%08X (expected 0x12345678 or 0x12345679)".format(initialMagic.toInt()), Ar)
 
         val nums = Array(11) { Ar.readInt32() }
 
         if (order == ELoadOrder.TextFirst) {
-            val textDataBytes = Ar.readUInt32()
-            texts = Array(nums[4]) { Ar.readString() /*FText(Ar)*/ }
+            Ar.skip(4) // textDataBytes
+            Ar.alignPosInArchive()
+            texts = Array(nums[4]) { Ar.readString() }
         }
 
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         numberlessNames = Array(nums[0]) { FNameEntryId(Ar) }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         names = Array(nums[1]) { Ar.readFName() }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         numberlessExportPaths = Array(nums[2]) { FNumberlessExportPath(Ar, nameMap) }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         exportPaths = Array(nums[3]) { FAssetRegistryExportPath(Ar) }
 
         if (order == ELoadOrder.Member) {
-            texts = Array(nums[4]) { Ar.readString() /*FText(Ar)*/ }
+            texts = Array(nums[4]) { Ar.readString() }
         }
 
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         ansiStringOffsets = Array(nums[5]) { Ar.readUInt32() }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         wideStringOffsets = Array(nums[6]) { Ar.readUInt32() }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         ansiStrings = Ar.read(nums[7])
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         wideStrings = Ar.read(nums[8] * 2)
 
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         numberlessPairs = Array(nums[9]) { FNameEntryId(Ar) to FValueId(Ar) }
+
+        if (order == ELoadOrder.TextFirst) Ar.alignPosInArchive()
         pairs = Array(nums[10]) { Ar.readFName() to FValueId(Ar) }
-        Ar.skip(4) // END_MAGIC — skip instead of validate (matches CUE4Parse behavior)
+
+        val endMagic = Ar.readUInt32()
+        if (endMagic != END_MAGIC) {
+            throw ParserException("Invalid FStore EndMagic 0x%08X (expected 0x%08X)".format(endMagic.toInt(), END_MAGIC.toInt()), Ar)
+        }
     }
 
     fun getLoadOrder(initialMagic: UInt) = when (initialMagic) {
