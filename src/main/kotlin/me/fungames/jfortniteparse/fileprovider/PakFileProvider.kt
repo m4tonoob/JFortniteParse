@@ -192,16 +192,27 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
                 if (container.entries.isEmpty()) continue
 
                 val utocHashHex = container.utocHash.joinToString("") { "%02x".format(it) }
-                val utocUrl = "$ON_DEMAND_CDN_BASE/${toc.header.chunksDirectory}/$utocHashHex.utoc"
 
-                logger.info("Downloading on-demand UTOC for '${container.containerName}' from CDN...")
-
+                // Try loading UTOC from disk cache first, download from CDN if not cached
+                val utocCacheFile = chunkDownloadDir?.let { File(it, "$utocHashHex.utoc") }
                 val utocBytes: ByteArray
                 try {
-                    utocBytes = fetchUrl(utocUrl)
-                    logger.info("Downloaded UTOC for '${container.containerName}': ${utocBytes.size} bytes")
+                    val cached = utocCacheFile?.takeIf { it.exists() }?.readBytes()
+                    if (cached != null) {
+                        utocBytes = cached
+                        logger.info("Loaded on-demand UTOC for '${container.containerName}' from disk cache (${utocBytes.size} bytes)")
+                    } else {
+                        val utocUrl = "$ON_DEMAND_CDN_BASE/${toc.header.chunksDirectory}/$utocHashHex.utoc"
+                        logger.info("Downloading on-demand UTOC for '${container.containerName}' from CDN...")
+                        utocBytes = fetchUrl(utocUrl)
+                        logger.info("Downloaded UTOC for '${container.containerName}': ${utocBytes.size} bytes")
+                        if (utocCacheFile != null) {
+                            utocCacheFile.parentFile?.mkdirs()
+                            utocCacheFile.writeBytes(utocBytes)
+                        }
+                    }
                 } catch (e: Exception) {
-                    logger.error("Failed to download UTOC for '${container.containerName}': ${e.message}")
+                    logger.error("Failed to load UTOC for '${container.containerName}': ${e.message}")
                     continue
                 }
 
