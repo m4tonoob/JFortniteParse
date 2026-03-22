@@ -29,6 +29,25 @@ class UTexture2D : UTexture() {
     override fun deserialize(Ar: FAssetArchive, validPos: Int) {
         super.deserialize(Ar, validPos)
         flag1 = FStripDataFlags(Ar)
+        // CUE4Parse: UTexture reads editor source data here when not stripped.
+        // For Fortnite IoStore textures this is 16 bytes (confirmed by hex comparison).
+        // Safety: validate the bytes after the skip look correct, otherwise revert.
+        if (!flag1.isEditorDataStripped()) {
+            val editorPos = Ar.pos()
+            Ar.skip(16)
+            // Peek ahead: flag2 should have valid globalStripFlags, and cooked should be 0 or 1
+            val peekPos = Ar.pos()
+            Ar.readUInt8() // skip flag2.globalStripFlags
+            Ar.readUInt8() // skip flag2.classStripFlags
+            val peekCooked = Ar.readInt32()
+            if (peekCooked == 0 || peekCooked == 1) {
+                Ar.seek(peekPos) // rewind to just after skip — let normal flow read flag2+cooked
+            } else {
+                // Skip size was wrong — revert and let it fail the same way it did before
+                LOG_JFP.warn("UTexture2D editor data skip validation failed at ${getPathName()}, reverting")
+                Ar.seek(editorPos)
+            }
+        }
         flag2 = FStripDataFlags(Ar)
         cooked = Ar.readBoolean()
         textures = mutableMapOf()
