@@ -1,6 +1,7 @@
 package me.fungames.jfortniteparse.ue4.assets.objects
 
 import me.fungames.jfortniteparse.LOG_JFP
+import me.fungames.jfortniteparse.compression.Compression
 import me.fungames.jfortniteparse.exceptions.ParserException
 import me.fungames.jfortniteparse.ue4.assets.enums.EBulkDataFlags.*
 import me.fungames.jfortniteparse.ue4.assets.reader.FAssetArchive
@@ -15,17 +16,19 @@ open class FByteBulkData {
     constructor(Ar: FAssetArchive) {
         header = FByteBulkDataHeader(Ar)
         val bulkDataFlags = header.bulkDataFlags
+        // sizeOnDisk is the compressed size (or uncompressed size when not compressed).
+        // elementCount is always the uncompressed size.
+        val readBuffer = ByteArray(header.sizeOnDisk.toInt())
         data = ByteArray(header.elementCount.toInt())
         when {
-            header.elementCount == 0L -> {
-                // Nothing to do here
-            }
+            header.elementCount == 0L -> return // Nothing to do here
             BULKDATA_Unused.check(bulkDataFlags) -> {
                 LOG_JFP.warn("Bulk with no data")
+                return
             }
             BULKDATA_ForceInlinePayload.check(bulkDataFlags) -> {
                 LOG_JFP.debug("bulk data in .uexp file (Force Inline Payload) (flags=$bulkDataFlags, pos=${header.offsetInFile}, size=${header.sizeOnDisk})")
-                Ar.read(data)
+                Ar.read(readBuffer)
             }
             BULKDATA_PayloadInSeperateFile.check(bulkDataFlags) -> {
                 LOG_JFP.debug("bulk data in .ubulk file (Payload In Seperate File) (flags=$bulkDataFlags, pos=${header.offsetInFile}, size=${header.sizeOnDisk})")
@@ -36,23 +39,29 @@ open class FByteBulkData {
                 })
                 if (ubulkAr.size() > 0) {
                     ubulkAr.seek(header.offsetInFile.toInt())
-                    ubulkAr.read(data)
+                    ubulkAr.read(readBuffer)
                 } else { // bulk data file not found
                     data = ByteArray(0)
+                    return
                 }
             }
             BULKDATA_PayloadAtEndOfFile.check(bulkDataFlags) -> {
                 //stored in same file, but at different position
                 //save archive position
                 val savePos = Ar.pos()
-                if (header.offsetInFile.toInt() + header.elementCount <= Ar.size()) {
+                if (header.offsetInFile.toInt() + header.sizeOnDisk <= Ar.size()) {
                     Ar.seek(header.offsetInFile.toInt())
-                    Ar.read(data)
+                    Ar.read(readBuffer)
                 } else {
                     throw ParserException("Failed to read PayloadAtEndOfFile, ${header.offsetInFile} is out of range", Ar)
                 }
                 Ar.seek(savePos)
             }
+        }
+        if (BULKDATA_SerializeCompressedZLIB.check(bulkDataFlags)) {
+            Compression.uncompressMemory("Zlib", data, readBuffer)
+        } else {
+            data = readBuffer
         }
     }
 

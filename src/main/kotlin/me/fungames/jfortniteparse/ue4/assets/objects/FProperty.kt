@@ -189,14 +189,14 @@ sealed class FProperty {
                     if (type == ReadType.NORMAL && typeData.enumName.isNone()) {
                         EnumProperty(FName.NAME_None)
                     } else if (type != ReadType.MAP && type != ReadType.ARRAY && Ar.useUnversionedPropertySerialization) {
-                        val ordinal = if (nz) if (typeData.isEnumAsByte) Ar.read() else Ar.readInt32() else 0
+                        val ordinal = if (nz) if (typeData.isEnumAsByte) Ar.read().toLong() else Ar.readInt64() else 0L
                         val enumClass = typeData.enumClass?.value
                         if (enumClass != null) { // serialized or reflection
-                            val enumValue = enumClass.names.firstOrNull { it.second == ordinal.toLong() }
+                            val enumValue = enumClass.names.firstOrNull { it.second == ordinal }
                                 ?: throw ParserException("Failed to get enum index $ordinal for enum ${enumClass.name}", Ar)
                             EnumProperty(enumValue.first)
                         } else { // loaded from mappings provider
-                            val enumValue = Ar.provider!!.mappingsProvider.getEnumValues(typeData.enumName)?.getOrNull(ordinal)
+                            val enumValue = Ar.provider!!.mappingsProvider.getEnumValues(typeData.enumName)?.getOrNull(ordinal.toInt())
                                 ?: throw ParserException("Failed to get enum index $ordinal for enum ${typeData.enumName}", Ar)
                             val fakeName = (typeData.enumName.text + "::" + enumValue)
                             EnumProperty(FName(fakeName))
@@ -232,6 +232,7 @@ sealed class FProperty {
                     }
                     ReadType.MAP -> Ar.writeUInt32(tag.byte.toUInt())
                     ReadType.ARRAY -> Ar.writeUInt8(tag.byte)
+                    ReadType.ZERO -> {}
                 }
                 is DelegateProperty -> tag.delegate.serialize(Ar)
                 is DoubleProperty -> Ar.writeDouble(tag.number)
@@ -257,6 +258,7 @@ sealed class FProperty {
                 is UInt16Property -> Ar.writeUInt16(tag.number)
                 is UInt32Property -> Ar.writeUInt32(tag.number)
                 is UInt64Property -> Ar.writeUInt64(tag.number)
+                is FieldPathProperty -> {} // FFieldPath doesn't have serialize yet
             }
         }
     }
