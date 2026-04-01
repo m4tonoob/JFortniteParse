@@ -192,6 +192,13 @@ abstract class FArchive : Cloneable, InputStream {
         }
     }
 
+    fun readFUtf8String(): String {
+        val length = readInt32()
+        if (length < 0) throw ParserException("Negative Utf8String length '$length'", this)
+        if (length == 0) return ""
+        return String(read(length), Charsets.UTF_8)
+    }
+
     inline fun <reified K, reified V> readTMap(length: Int, init: (FArchive) -> Pair<K, V>): MutableMap<K, V> {
         val res = LinkedHashMap<K, V>(length)
         for (i in 0 until length) {

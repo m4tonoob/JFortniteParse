@@ -197,7 +197,7 @@ class PropertyType {
         when {
             type == "StructProperty" -> sb.append('<').append(structName).append('>')
             type == "ByteProperty" && !enumName.isNone() || type == "EnumProperty" -> sb.append('<').append(enumName).append('>')
-            type == "ArrayProperty" || type == "SetProperty" -> sb.append('<').append(innerType).append('>')
+            type == "ArrayProperty" || type == "SetProperty" || type == "OptionalProperty" -> sb.append('<').append(innerType).append('>')
             type == "MapProperty" -> sb.append('<').append(innerType).append(", ").append(valueType).append('>')
         }
         return sb.toString()

@@ -85,7 +85,7 @@ sealed class FProperty {
     }
 
     //@Deprecated(message = "Should not be used anymore, since its not able to process arrays and struct fallback", replaceWith = ReplaceWith("getTagTypeValue<T>"))
-    fun getTagTypeValueLegacy() = when (this) {
+    fun getTagTypeValueLegacy(): Any = when (this) {
         is ArrayProperty -> this.array
         is BoolProperty -> this.bool
         is ByteProperty -> this.byte
@@ -104,6 +104,7 @@ sealed class FProperty {
         is MulticastDelegateProperty -> this.delegate
         is NameProperty -> this.name
         is ObjectProperty -> this.index
+        is OptionalProperty -> (this.value)?.getTagTypeValueLegacy() ?: Unit
         is SetProperty -> this.set
         is SoftClassProperty -> this.`object`
         is SoftObjectProperty -> this.`object`
@@ -137,6 +138,7 @@ sealed class FProperty {
             is MulticastDelegateProperty -> this.delegate = value as FMulticastScriptDelegate
             is NameProperty -> this.name = value as FName
             is ObjectProperty -> this.index = value as FPackageIndex
+            is OptionalProperty -> this.value?.setTagTypeValue(value)
             is SetProperty -> this.set = value as UScriptSet
             is SoftClassProperty -> this.`object` = value as FSoftClassPath
             is SoftObjectProperty -> this.`object` = value as FSoftObjectPath
@@ -213,6 +215,15 @@ sealed class FProperty {
                 "Int16Property" -> Int16Property(if (nz) Ar.readInt16() else 0)
                 "Int64Property" -> Int64Property(if (nz) Ar.readInt64() else 0)
                 "FieldPathProperty" -> FieldPathProperty(if (nz) FFieldPath(Ar) else FFieldPath())
+                "OptionalProperty" -> {
+                    val innerType = typeData.innerType
+                        ?: throw ParserException("OptionalProperty needs inner type", Ar)
+                    if (!nz || !Ar.readBoolean()) {
+                        OptionalProperty(null)
+                    } else {
+                        OptionalProperty(readPropertyValue(Ar, innerType, ReadType.NORMAL))
+                    }
+                }
 
                 else -> {
                     LOG_JFP.warn("Couldn't read property type $propertyType at ${Ar.pos()}")
@@ -249,6 +260,11 @@ sealed class FProperty {
                 is MulticastDelegateProperty -> tag.delegate.serialize(Ar)
                 is NameProperty -> Ar.writeFName(tag.name)
                 is ObjectProperty -> tag.index.serialize(Ar)
+                is OptionalProperty -> {
+                    val inner = tag.value
+                    Ar.writeBoolean(inner != null)
+                    if (inner != null) writePropertyValue(Ar, inner, type)
+                }
                 is SetProperty -> tag.set.serialize(Ar)
                 is SoftClassProperty -> tag.`object`.serialize(Ar)
                 is SoftObjectProperty -> tag.`object`.serialize(Ar)
@@ -282,6 +298,7 @@ sealed class FProperty {
     class MulticastDelegateProperty(var delegate: FMulticastScriptDelegate) : FProperty()
     class NameProperty(var name: FName) : FProperty()
     open class ObjectProperty(var index: FPackageIndex) : FProperty()
+    class OptionalProperty(var value: FProperty?) : FProperty()
     class SetProperty(var set: UScriptSet) : FProperty()
     class SoftClassProperty(var `object`: FSoftClassPath) : FProperty()
     class SoftObjectProperty(var `object`: FSoftObjectPath) : FProperty()

@@ -3,6 +3,7 @@ package me.fungames.jfortniteparse.ue4.objects.uobject
 import me.fungames.jfortniteparse.ue4.assets.Package
 import me.fungames.jfortniteparse.ue4.reader.FArchive
 import me.fungames.jfortniteparse.ue4.versions.EUnrealEngineObjectUE5Version
+import me.fungames.jfortniteparse.ue4.versions.FFortniteMainBranchObjectVersion
 import me.fungames.jfortniteparse.ue4.writer.FArchiveWriter
 
 /**
@@ -25,7 +26,11 @@ open class FSoftObjectPath {
         } else {
             Ar.readFName()
         }
-        subPathString = Ar.readString() // uhhh yeah i cba rn lol TODO: https://github.com/FabianFG/CUE4Parse/commit/b9b1289fef1ab37cb3a7079a6050939b1ff80ca9
+        subPathString = if (FFortniteMainBranchObjectVersion.get(Ar) >= FFortniteMainBranchObjectVersion.SoftObjectPathUtf8SubPaths) {
+            Ar.readFUtf8String()
+        } else {
+            Ar.readString()
+        }
     }
 
     fun serialize(Ar: FArchiveWriter) {

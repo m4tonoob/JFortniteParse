@@ -39,11 +39,23 @@ class FUnversionedStructSchema {
         var index = 0
         var struct: UStruct? = struct
         while (struct != null) {
-            if (struct is UScriptStruct && struct.useClassProperties) {
+            if (struct.childProperties2.isNotEmpty()) {
+                // Usmap mappings — always preferred when available (has correct indices for current game version)
+                val startIndex = index
+                for (prop in struct.childProperties2) {
+                    index = startIndex + prop.index
+                    for (arrayIdx in 0 until prop.arrayDim) {
+                        if (GDebugProperties) println("$index = ${prop.name}")
+                        serializers[index++] = FUnversionedPropertySerializer(prop, arrayIdx)
+                    }
+                }
+                index = startIndex + struct.propertyCount
+            } else if (struct is UScriptStruct && struct.useClassProperties) {
+                // Fallback to hardcoded Java class reflection (when no usmap data)
                 val clazz = struct.structClass
                     ?: throw MissingSchemaException("Missing schema for $struct")
                 val onlyAnnotated = clazz.isAnnotationPresent(OnlyAnnotated::class.java)
-                for (field in clazz.declaredFields) { // Reflection
+                for (field in clazz.declaredFields) {
                     if (Modifier.isStatic(field.modifiers)) {
                         continue
                     }
@@ -60,23 +72,14 @@ class FUnversionedStructSchema {
                     index += ann?.skipNext ?: 0
                 }
             } else if (struct.childProperties.isNotEmpty()) {
-                for (prop in struct.childProperties) { // Serialized in packages
+                // Serialized properties from packages
+                for (prop in struct.childProperties) {
                     val propertyInfo = PropertyInfo(prop.name.text, PropertyType(prop as FPropertySerialized), prop.arrayDim)
                     for (arrayIdx in 0 until prop.arrayDim) {
                         if (GDebugProperties) println("$index = ${prop.name} [SERIALIZED]")
                         serializers[index++] = FUnversionedPropertySerializer(propertyInfo, arrayIdx)
                     }
                 }
-            } else if (struct.childProperties2.isNotEmpty()) {
-                val startIndex = index
-                for (prop in struct.childProperties2) { // Provided by TypeMappingsProvider
-                    index = startIndex + prop.index
-                    for (arrayIdx in 0 until prop.arrayDim) {
-                        if (GDebugProperties) println("$index = ${prop.name}")
-                        serializers[index++] = FUnversionedPropertySerializer(prop, arrayIdx)
-                    }
-                }
-                index = startIndex + struct.propertyCount
             }
             struct = struct.superStruct?.value
         }

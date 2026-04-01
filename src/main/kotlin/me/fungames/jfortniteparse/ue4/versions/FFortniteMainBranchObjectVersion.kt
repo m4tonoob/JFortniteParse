@@ -166,6 +166,9 @@ object FFortniteMainBranchObjectVersion {
     // Added bShowCurve for movie scene float channel serialization
     const val SerializeFloatChannelShowCurve = 53
 
+    // FSoftObjectPath::SubPathString changed to FUtf8String
+    const val SoftObjectPathUtf8SubPaths = 192
+
     // -----<new versions can be added above this line>-------------------------------------------------
     const val LatestVersion = SerializeFloatChannelShowCurve
 
