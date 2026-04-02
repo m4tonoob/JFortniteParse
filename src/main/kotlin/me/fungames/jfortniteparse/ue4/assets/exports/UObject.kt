@@ -10,6 +10,7 @@ import me.fungames.jfortniteparse.ue4.assets.Package
 import me.fungames.jfortniteparse.ue4.assets.ResolvedObject
 import me.fungames.jfortniteparse.ue4.assets.objects.FPropertyTag
 import me.fungames.jfortniteparse.ue4.assets.objects.IPropertyHolder
+import me.fungames.jfortniteparse.ue4.versions.EUnrealEngineObjectUE5Version
 import me.fungames.jfortniteparse.ue4.assets.reader.FAssetArchive
 import me.fungames.jfortniteparse.ue4.assets.unprefix
 import me.fungames.jfortniteparse.ue4.assets.util.mapToClass
@@ -169,7 +170,14 @@ open class UObject : IPropertyHolder {
     override fun toString() = name
 }
 
-fun deserializeVersionedTaggedProperties(properties: MutableList<FPropertyTag>, Ar: FAssetArchive) {
+fun deserializeVersionedTaggedProperties(properties: MutableList<FPropertyTag>, Ar: FAssetArchive, isStruct: Boolean = true) {
+    // UE5: UObjects (not structs) have a class serialization control extension byte before properties
+    if (!isStruct && Ar.ver >= EUnrealEngineObjectUE5Version.PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
+        val serializationControl = Ar.read() // EClassSerializationControlExtension
+        if (serializationControl.toInt() and 0x02 != 0) { // OverridableSerializationInformation = 0x02
+            Ar.read() // operation byte
+        }
+    }
     while (true) {
         val tag = FPropertyTag(Ar, true)
         if (tag.name.isNone())

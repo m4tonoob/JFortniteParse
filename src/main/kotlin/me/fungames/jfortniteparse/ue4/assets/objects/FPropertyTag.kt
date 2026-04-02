@@ -7,6 +7,7 @@ import me.fungames.jfortniteparse.ue4.assets.writer.FAssetArchiveWriter
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
 import me.fungames.jfortniteparse.ue4.versions.*
+import me.fungames.jfortniteparse.ue4.versions.EUnrealEngineObjectUE5Version.PROPERTY_TAG_COMPLETE_TYPE_NAME
 import me.fungames.jfortniteparse.util.INDEX_NONE
 import java.lang.reflect.Type
 
@@ -14,14 +15,27 @@ import java.lang.reflect.Type
  * Property tag extension flags
  */
 enum class EPropertyTagExtension(val value: Int) {
-    NoExtension(0),
-    OverridableInformation(1);
+    NoExtension(0x00),
+    ReserveForFutureUse(0x01),
+    OverridableInformation(0x02);
 
     companion object {
         fun hasFlag(flags: Int, flag: EPropertyTagExtension): Boolean {
             return (flags and flag.value) != 0
         }
     }
+}
+
+/**
+ * UE 5.4+ property tag flags (packed into a single byte)
+ */
+object EPropertyTagFlags {
+    const val HasArrayIndex = 0x01
+    const val HasPropertyGuid = 0x02
+    const val HasPropertyExtensions = 0x04
+    const val HasBinaryOrNativeSerialize = 0x08
+    const val BoolTrue = 0x10
+    const val SkippedSerialize = 0x20
 }
 
 /**
@@ -61,50 +75,79 @@ class FPropertyTag {
     constructor(Ar: FAssetArchive, readData: Boolean) {
         name = Ar.readFName()
         if (!name.isNone()) {
-            type = Ar.readFName()
-            size = Ar.readInt32()
-            arrayIndex = Ar.readInt32()
-            val tagType = type.text
+            if (Ar.ver >= PROPERTY_TAG_COMPLETE_TYPE_NAME) {
+                // UE 5.4+ new tagged property format
+                val typeName = FPropertyTypeName(Ar)
+                type = FName(typeName.getName())
+                typeData = buildPropertyTypeFromTypeName(typeName)
 
-            if (tagType == "StructProperty") { // only need to serialize this for structs
-                structName = Ar.readFName()
-                if (Ar.ver >= VER_UE4_STRUCT_GUID_IN_PROPERTY_TAG)
-                    structGuid = FGuid(Ar)
-            } else if (tagType == "BoolProperty") { // only need to serialize this for bools
-                boolVal = Ar.readFlag()
-            } else if (tagType == "ByteProperty") { // only need to serialize this for bytes/enums
-                enumName = Ar.readFName()
-            } else if (tagType == "EnumProperty") {
-                enumName = Ar.readFName()
-            } else if (tagType == "ArrayProperty") { // only need to serialize this for arrays
-                if (Ar.ver >= VER_UE4_ARRAY_PROPERTY_INNER_TAGS)
-                    innerType = Ar.readFName()
-            } else if (Ar.ver >= VER_UE4_PROPERTY_TAG_SET_MAP_SUPPORT) {
-                if (tagType == "SetProperty") {
-                    innerType = Ar.readFName()
-                } else if (tagType == "MapProperty") {
-                    innerType = Ar.readFName() // MapProperty doesn't seem to store the inner types as their types when they're UStructs.
-                    valueType = Ar.readFName()
+                size = Ar.readInt32()
+                val flags = Ar.read().toInt() and 0xFF
+
+                boolVal = (flags and EPropertyTagFlags.BoolTrue) != 0
+                if (boolVal) typeData!!.bool = true
+                arrayIndex = if ((flags and EPropertyTagFlags.HasArrayIndex) != 0) Ar.readInt32() else 0
+                hasPropertyGuid = (flags and EPropertyTagFlags.HasPropertyGuid) != 0
+                if (hasPropertyGuid) propertyGuid = FGuid(Ar)
+
+                if ((flags and EPropertyTagFlags.HasPropertyExtensions) != 0) {
+                    val tagExtensions = Ar.read()
+                    if (EPropertyTagExtension.hasFlag(tagExtensions, EPropertyTagExtension.OverridableInformation)) {
+                        val overrideOperation = Ar.read() // EOverriddenPropertyOperation
+                        val bExperimentalOverridableLogic = Ar.readBoolean()
+                    }
                 }
-            }
 
-            // Property tags to handle renamed blueprint properties effectively.
-            if (Ar.ver >= VER_UE4_PROPERTY_GUID_IN_PROPERTY_TAG) {
-                hasPropertyGuid = Ar.readFlag()
-                if (hasPropertyGuid)
-                    propertyGuid = FGuid(Ar)
-            }
+                // Copy struct/enum info back to tag fields for compatibility
+                structName = typeData!!.structName
+                enumName = typeData!!.enumName
+                innerType = typeData!!.innerType?.type ?: FName.NAME_None
+                valueType = typeData!!.valueType?.type ?: FName.NAME_None
+            } else {
+                // Legacy tagged property format
+                type = Ar.readFName()
+                size = Ar.readInt32()
+                arrayIndex = Ar.readInt32()
+                val tagType = type.text
 
-            // Property tag extensions for overridable serialization
-            if (FUE5MainStreamObjectVersion.get(Ar) >= FUE5MainStreamObjectVersion.PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
-                val tagExtensions = Ar.read()
-                if (EPropertyTagExtension.hasFlag(tagExtensions, EPropertyTagExtension.OverridableInformation)) {
-                    val overrideOperation = Ar.read() // EOverriddenPropertyOperation
-                    val bExperimentalOverridableLogic = Ar.readBoolean()
+                if (tagType == "StructProperty") {
+                    structName = Ar.readFName()
+                    if (Ar.ver >= VER_UE4_STRUCT_GUID_IN_PROPERTY_TAG)
+                        structGuid = FGuid(Ar)
+                } else if (tagType == "BoolProperty") {
+                    boolVal = Ar.readFlag()
+                } else if (tagType == "ByteProperty") {
+                    enumName = Ar.readFName()
+                } else if (tagType == "EnumProperty") {
+                    enumName = Ar.readFName()
+                } else if (tagType == "ArrayProperty") {
+                    if (Ar.ver >= VER_UE4_ARRAY_PROPERTY_INNER_TAGS)
+                        innerType = Ar.readFName()
+                } else if (Ar.ver >= VER_UE4_PROPERTY_TAG_SET_MAP_SUPPORT) {
+                    if (tagType == "SetProperty") {
+                        innerType = Ar.readFName()
+                    } else if (tagType == "MapProperty") {
+                        innerType = Ar.readFName()
+                        valueType = Ar.readFName()
+                    }
                 }
-            }
 
-            typeData = PropertyType(this)
+                if (Ar.ver >= VER_UE4_PROPERTY_GUID_IN_PROPERTY_TAG) {
+                    hasPropertyGuid = Ar.readFlag()
+                    if (hasPropertyGuid)
+                        propertyGuid = FGuid(Ar)
+                }
+
+                if (FUE5MainStreamObjectVersion.get(Ar) >= FUE5MainStreamObjectVersion.PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
+                    val tagExtensions = Ar.read()
+                    if (EPropertyTagExtension.hasFlag(tagExtensions, EPropertyTagExtension.OverridableInformation)) {
+                        val overrideOperation = Ar.read()
+                        val bExperimentalOverridableLogic = Ar.readBoolean()
+                    }
+                }
+
+                typeData = PropertyType(this)
+            }
 
             if (readData) {
                 val pos = Ar.pos()
@@ -119,7 +162,6 @@ class FPropertyTag {
                         LOG_JFP.warn("Failed to read FPropertyTagType $typeData $name, skipping it", e)
                     }
                 } finally {
-                    // Always seek to calculated position, no need to crash
                     Ar.seek(finalPos)
                 }
             }
@@ -195,4 +237,33 @@ class FPropertyTag {
     }
 
     override fun toString() = "${name.text}   -->   ${if (prop != null) getTagTypeValueLegacy() else "Failed to parse"}"
+
+    companion object {
+        /**
+         * Converts a UE 5.4 FPropertyTypeName tree into JFP's PropertyType structure,
+         * extracting struct names, enum names, inner/value types recursively.
+         */
+        fun buildPropertyTypeFromTypeName(typeName: FPropertyTypeName): PropertyType {
+            val pt = PropertyType(FName(typeName.getName()))
+            when (typeName.getName()) {
+                "BoolProperty" -> pt.bool = false
+                "StructProperty" -> {
+                    typeName.getParameter(0)?.let { pt.structName = FName(it.getName()) }
+                }
+                "ByteProperty", "EnumProperty" -> {
+                    typeName.getParameter(0)?.let { pt.enumName = FName(it.getName()) }
+                }
+                "ArrayProperty", "SetProperty", "OptionalProperty" -> {
+                    typeName.getParameter(0)?.let {
+                        pt.innerType = buildPropertyTypeFromTypeName(it)
+                    }
+                }
+                "MapProperty" -> {
+                    typeName.getParameter(0)?.let { pt.innerType = buildPropertyTypeFromTypeName(it) }
+                    typeName.getParameter(1)?.let { pt.valueType = buildPropertyTypeFromTypeName(it) }
+                }
+            }
+            return pt
+        }
+    }
 }

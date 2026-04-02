@@ -30,6 +30,8 @@ abstract class FArchive : Cloneable, InputStream {
     var useUnversionedPropertySerialization = false
     /** Whether editor only properties are being filtered from the archive (or has been filtered). */
     var isFilterEditorOnly = true
+    /** When true, skip null-termination validation on strings (equivalent to CUE4Parse NO_STRING_NULL_TERMINATION_VALIDATION). Used for save game files. */
+    var lenientStrings = false
     abstract var littleEndian: Boolean
 
     @JvmOverloads
@@ -176,14 +178,14 @@ abstract class FArchive : Cloneable, InputStream {
         return if (length < 0) {
             val utf16length = -length
             val data = IntArray(utf16length - 1) { readUInt16().toInt() }
-            if (readUInt16() != 0.toUShort())
+            if (readUInt16() != 0.toUShort() && !lenientStrings)
                 throw ParserException("Serialized FString is not null-terminated", this)
             String(data, 0, utf16length - 1)
         } else {
             if (length == 0)
                 return ""
             val string = Charsets.UTF_8.decode(readBuffer(length - 1)).toString()
-            if (readUInt8() != 0.toUByte())
+            if (readUInt8() != 0.toUByte() && !lenientStrings)
                 throw ParserException("Serialized FString is not null-terminated", this)
             //if (string == "") For re-serializing replacing actually empty strings with these ones to detect the difference, causes issues with locres
             //    " "
