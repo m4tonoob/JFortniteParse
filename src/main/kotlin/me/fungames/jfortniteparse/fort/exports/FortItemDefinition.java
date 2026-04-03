@@ -9,6 +9,7 @@ import me.fungames.jfortniteparse.ue4.objects.FScalableFloat;
 import me.fungames.jfortniteparse.ue4.objects.core.i18n.FText;
 import me.fungames.jfortniteparse.ue4.objects.core.math.FRotator;
 import me.fungames.jfortniteparse.ue4.objects.core.math.FVector;
+import me.fungames.jfortniteparse.ue4.assets.objects.FStructFallback;
 import me.fungames.jfortniteparse.ue4.objects.gameplaytags.FGameplayTagContainer;
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName;
 import me.fungames.jfortniteparse.ue4.objects.uobject.FSoftObjectPath;
@@ -54,15 +55,37 @@ public class FortItemDefinition extends ItemDefinitionBase {
     public FSoftObjectPath FrontendPreviewSkeletalMeshOverride;
     public List<FInstancedStruct> DataList;
 
+    /**
+     * Returns GameplayTags, checking the DataList fallback where
+     * tags moved to ItemComponentData_OwnedGameplayTags.
+     */
+    public FGameplayTagContainer getGameplayTags() {
+        if (GameplayTags != null) return GameplayTags;
+        if (DataList == null) return null;
+        for (FInstancedStruct entry : DataList) {
+            if (entry.getStruct() != null && "ItemComponentData_OwnedGameplayTags".equals(entry.getStruct().getStructName().getText())) {
+                Object structType = entry.getStruct().getStructType();
+                if (structType instanceof FStructFallback) {
+                    FGameplayTagContainer tags = ((FStructFallback) structType).getOrNull("Tags", FGameplayTagContainer.class);
+                    if (tags != null) return tags;
+                }
+            }
+        }
+        return null;
+    }
+
     public FName getSet() {
-        return GameplayTags != null ? GameplayTags.getValue("Cosmetics.Set") : null;
+        FGameplayTagContainer tags = getGameplayTags();
+        return tags != null ? tags.getValue("Cosmetics.Set") : null;
     }
 
     public FName getSource() {
-        return GameplayTags != null ? GameplayTags.getValue("Cosmetics.Source") : null;
+        FGameplayTagContainer tags = getGameplayTags();
+        return tags != null ? tags.getValue("Cosmetics.Source") : null;
     }
 
     public FName getUserFacingFlags() {
-        return GameplayTags != null ? GameplayTags.getValue("Cosmetics.UserFacingFlags") : null;
+        FGameplayTagContainer tags = getGameplayTags();
+        return tags != null ? tags.getValue("Cosmetics.UserFacingFlags") : null;
     }
 }
