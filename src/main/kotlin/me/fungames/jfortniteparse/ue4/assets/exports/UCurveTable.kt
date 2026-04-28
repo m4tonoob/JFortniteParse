@@ -135,6 +135,7 @@ class FCurveTableRowHandle {
      * @param xValue The input X value to the curve
      * @return The value of the curve if valid, 0 if not
      */
+    fun eval(xValue: Float) = getCurve()?.eval(xValue) ?: 0f
     fun eval(xValue: Float, warnIfNotFound: Boolean = true) = getCurve(warnIfNotFound)?.eval(xValue) ?: 0f
 
     /** Evaluate the curve if it is valid
