@@ -217,8 +217,8 @@ fun UTexture2D.toBufferedImage(texture: FTexturePlatformData = getFirstTexture()
             }
             return rgbaBufferToImage(dst, width, height)
         }
+        else -> throw IllegalArgumentException("Unsupported pixel format: $format")
     }
-    throw IllegalArgumentException("Unsupported pixel format: $format")
 }
 
 fun FTexturePlatformData.getDdsFourCC() = when (pixelFormat) {
