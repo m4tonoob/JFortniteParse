@@ -248,8 +248,11 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     }
 
     private fun buildCdnMappings(utocBytes: ByteArray, entries: Array<FOnDemandTocEntry>): List<CdnChunkMapping> {
+        // Read TOC metas: the CDN .iochunk for each chunk is named by the per-chunk content hash
+        // (FIoHash) stored in the utoc's chunkMetas — NOT the on-demand TOC entry hash, whose
+        // record layout changed in Fortnite 41.00 and no longer carries the 20-byte chunk hash.
         val ar = FByteArchive(utocBytes, versions)
-        val tocResource = FIoStoreTocResource(ar, 0)
+        val tocResource = FIoStoreTocResource(ar, TOC_READ_OPTION_READ_TOC_META)
 
         val compressionBlockSize = tocResource.header.compressionBlockSize
         val mappings = mutableListOf<CdnChunkMapping>()
@@ -258,11 +261,13 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
             val tocEntryIndex = tocResource.getTocEntryIndex(entry.chunkId)
             if (tocEntryIndex == -1) continue
 
+            val meta = tocResource.chunkMetas.getOrNull(tocEntryIndex) ?: continue
+
             val offsetAndLength = tocResource.chunkOffsetLengths[tocEntryIndex]
             val firstBlockIndex = (offsetAndLength.offset / compressionBlockSize).toInt()
             val ucasStartOffset = tocResource.compressionBlocks[firstBlockIndex].offset.toLong()
 
-            val hashHex = entry.hash.joinToString("") { "%02x".format(it) }
+            val hashHex = meta.chunkHash.joinToString("") { "%02x".format(it) }
             mappings.add(CdnChunkMapping(ucasStartOffset, hashHex))
         }
 

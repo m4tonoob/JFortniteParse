@@ -472,6 +472,10 @@ class IoChunkTocV2(private val data: ByteArray) {
             val tagSetIndicesCount = readU32(base + 60)
             val utocHash = data.copyOfRange(base + 64, base + 84)
             val containerFlags = readU32U(base + 84)
+            // base+88 is FileContainerFlags (EIoContainerFlags). base+92 is PartitionCount:
+            // the data section begins with this many FOnDemandPartitionEntry structs
+            // (FSHAHash[20] + Size[4] = 24 bytes each) which must be skipped before the chunk arrays.
+            val partitionCount = readU32(base + 92)
 
             if (blockSize != 0u) headerBlockSize = blockSize
 
@@ -490,6 +494,12 @@ class IoChunkTocV2(private val data: ByteArray) {
 
             try {
                 var off = containerDataStart
+
+                // 0) Skip PartitionEntries[partitionCount] — 24 bytes each (FSHAHash[20] + Size[4]).
+                // Added to the on-demand V2 format; not needed for CDN mapping (block layout comes
+                // from the downloaded .utoc). Omitting this skip misaligns every following read,
+                // turning offsetOrSize into garbage and crashing the block-info resolution below.
+                off += partitionCount * 24
 
                 // 1) FIoChunkId[chunkCount] — 12 bytes each
                 val chunkIds = Array(chunkCount) {
@@ -577,7 +587,7 @@ class IoChunkTocV2(private val data: ByteArray) {
                     header = headerBytes
                 )
             } catch (e: Exception) {
-                LOG_JFP.warn("V2 TOC: Failed to parse container '{}': {}", containerName, e.message)
+                LOG_JFP.warn("V2 TOC: Failed to parse container '$containerName': ${e.message}", e)
                 FOnDemandTocContainerEntry(
                     containerId, containerName, "", emptyArray(), UIntArray(0), UIntArray(0),
                     utocHash, EOnDemandContainerFlags(0u), ByteArray(0)
