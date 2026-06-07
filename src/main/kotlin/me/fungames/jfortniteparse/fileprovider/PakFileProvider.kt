@@ -88,7 +88,7 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
         if (!isOnDemand) {
             val gameFiles = reader.readIndex()
             for (gameFile in gameFiles) {
-                val fullPath = gameFile.path.toLowerCase()
+                val fullPath = gameFile.path.lowercase()
                 files[fullPath] = gameFile
                 // Register virtual path alias for Game Feature plugin content.
                 // Files indexed as "fortnitegame/plugins/gamefeatures/brcosmetics/content/ui/..."
@@ -137,6 +137,11 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
         }
     }
 
+    /** When false, skip creating CDN-backed readers for on-demand containers that didn't link to a local reader
+     * (e.g. install-on-demand `iad` containers whose chunks aren't on the on-demand CDN). Their data is expected
+     * to be provided by another mounted source instead (e.g. the FortniteContentBuilds content build). */
+    var mountUnlinkedOnDemandReaders = true
+
     /**
      * Links on-demand TOC containers to IoStore readers, then creates CDN-backed
      * readers for any unlinked containers. Call after all TOCs are registered and
@@ -182,6 +187,10 @@ abstract class PakFileProvider : AbstractFileProvider(), CoroutineScope {
     }
 
     private fun mountOnDemandReaders() {
+        if (!mountUnlinkedOnDemandReaders) {
+            if (unlinkedOnDemandContainers.isNotEmpty()) logger.info("Skipping ${unlinkedOnDemandContainers.size} unlinked on-demand container(s) (mountUnlinkedOnDemandReaders=false)")
+            return
+        }
         if (unlinkedOnDemandContainers.isEmpty()) return
 
         val toRemove = mutableListOf<FOnDemandTocContainerEntry>()
