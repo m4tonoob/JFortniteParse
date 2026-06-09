@@ -114,9 +114,9 @@ fun FortItemDefinition.createContainer(
                 icon = FortResources.fallbackIcon
         }
     }
-    val seriesDef = Series?.value
+    val seriesDef = seriesResolved?.value
     val seriesIcon = seriesDef?.BackgroundTexture?.load<UTexture2D>()?.toBufferedImage()
-    return ItemDefinitionContainer(this, icon, Rarity.rarityName.copy(), isFeatured, set?.run { ItemDefinitionInfo.sets[text] }?.run { SetName(this) }, seriesIcon, seriesDef)
+    return ItemDefinitionContainer(this, icon, rarityResolved.rarityName.copy(), isFeatured, set?.run { ItemDefinitionInfo.sets[text] }?.run { SetName(this) }, seriesIcon, seriesDef)
 }
 
 open class SetName(
@@ -170,7 +170,7 @@ private fun getImageWithVariants(container: ItemDefinitionContainer, locres: Loc
             variantsIconSize,
             variantsIconSize
         )
-    val rarity = itemDef.Rarity.getVariantsBackgroundImage()
+    val rarity = itemDef.rarityResolved.getVariantsBackgroundImage()
     val result = BufferedImage(rarity.width, rarity.height, BufferedImage.TYPE_INT_RGB)
     val g = result.createGraphics()
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -324,7 +324,7 @@ private fun getImageNoVariants(container: ItemDefinitionContainer, locres: Locre
     var icon = container.icon
     if (icon.width != 512 || icon.height != 512)
         icon = icon.scale(512, 512)
-    val rarity = itemDef.Rarity.getBackgroundImage()
+    val rarity = itemDef.rarityResolved.getBackgroundImage()
     val result = BufferedImage(rarity.width, rarity.height, BufferedImage.TYPE_INT_RGB)
     val g = result.createGraphics()
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -410,7 +410,7 @@ private fun getShopImage(container: ItemDefinitionContainer, size: EFortMtxOffer
     val iconSize = if (large) 1024 else 512
     if (icon.width != iconSize || icon.height != iconSize)
         icon = icon.scale(iconSize, iconSize)
-    val rarity = if (large) itemDef.Rarity.getFeaturedShopBackgroundImage() else itemDef.Rarity.getDailyShopBackgroundImage()
+    val rarity = if (large) itemDef.rarityResolved.getFeaturedShopBackgroundImage() else itemDef.rarityResolved.getDailyShopBackgroundImage()
     val result = BufferedImage(rarity.width, rarity.height, BufferedImage.TYPE_INT_RGB)
     val g = result.createGraphics()
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)

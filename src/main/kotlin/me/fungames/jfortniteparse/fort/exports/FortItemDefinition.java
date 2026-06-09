@@ -12,6 +12,7 @@ import me.fungames.jfortniteparse.ue4.objects.core.math.FVector;
 import me.fungames.jfortniteparse.ue4.assets.objects.FStructFallback;
 import me.fungames.jfortniteparse.ue4.objects.gameplaytags.FGameplayTagContainer;
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName;
+import me.fungames.jfortniteparse.ue4.objects.uobject.FPackageIndex;
 import me.fungames.jfortniteparse.ue4.objects.uobject.FSoftObjectPath;
 
 import java.util.List;
@@ -56,22 +57,62 @@ public class FortItemDefinition extends ItemDefinitionBase {
     public List<FInstancedStruct> DataList;
 
     /**
+     * Finds a DataList component struct by name. Modern item definitions are
+     * componentized: display data lives in (Fort)ItemComponentData_* instanced
+     * structs instead of direct properties.
+     */
+    private FStructFallback dataListEntry(String structName) {
+        if (DataList == null) return null;
+        for (FInstancedStruct entry : DataList) {
+            if (entry.getStruct() != null && structName.equals(entry.getStruct().getStructName().getText())) {
+                Object structType = entry.getStruct().getStructType();
+                if (structType instanceof FStructFallback) {
+                    return (FStructFallback) structType;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns GameplayTags, checking the DataList fallback where
      * tags moved to ItemComponentData_OwnedGameplayTags.
      */
     public FGameplayTagContainer getGameplayTags() {
         if (GameplayTags != null) return GameplayTags;
-        if (DataList == null) return null;
-        for (FInstancedStruct entry : DataList) {
-            if (entry.getStruct() != null && "ItemComponentData_OwnedGameplayTags".equals(entry.getStruct().getStructName().getText())) {
-                Object structType = entry.getStruct().getStructType();
-                if (structType instanceof FStructFallback) {
-                    FGameplayTagContainer tags = ((FStructFallback) structType).getOrNull("Tags", FGameplayTagContainer.class);
-                    if (tags != null) return tags;
-                }
+        FStructFallback data = dataListEntry("ItemComponentData_OwnedGameplayTags");
+        return data != null ? data.getOrNull("Tags", FGameplayTagContainer.class) : null;
+    }
+
+    /**
+     * Returns Rarity, checking the DataList fallback where it moved to
+     * FortItemComponentData_Rarity. The direct Rarity property no longer
+     * exists on current-season assets, so the field stays at its Uncommon
+     * default unless this resolver is used.
+     */
+    public EFortRarity getRarityResolved() {
+        FStructFallback data = dataListEntry("FortItemComponentData_Rarity");
+        if (data != null) {
+            EFortRarity rarity = data.getOrNull("Rarity", EFortRarity.class);
+            if (rarity != null) return rarity;
+        }
+        return Rarity;
+    }
+
+    /**
+     * Returns Series, checking the DataList fallback where it moved to
+     * FortItemComponentData_Series.
+     */
+    public Lazy<FortItemSeriesDefinition> getSeriesResolved() {
+        FStructFallback data = dataListEntry("FortItemComponentData_Series");
+        if (data != null) {
+            FPackageIndex index = data.getOrNull("Series", FPackageIndex.class);
+            if (index != null && index.getOwner() != null) {
+                Lazy<FortItemSeriesDefinition> series = index.getOwner().findObject(index);
+                if (series != null) return series;
             }
         }
-        return null;
+        return Series;
     }
 
     public FName getSet() {
