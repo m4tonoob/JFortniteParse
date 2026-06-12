@@ -511,8 +511,13 @@ fun loadFeaturedIcon(itemDefinition: FortItemDefinition): BufferedImage? =
 
 fun loadNormalIcon(itemDefinition: FortItemDefinition): BufferedImage? {
     (itemDefinition.LargePreviewImage ?: (itemDefinition as? AthenaEmojiItemDefinition)?.SpriteSheet)?.load<UTexture2D>()?.apply { return toBufferedImage() }
-    (itemDefinition as? AthenaCharacterItemDefinition)?.HeroDefinition?.value?.LargePreviewImage?.load<UTexture2D>()?.apply { return toBufferedImage() }
-    (itemDefinition as? AthenaPickaxeItemDefinition)?.WeaponDefinition?.value?.LargePreviewImage?.load<UTexture2D>()?.apply { return toBufferedImage() }
+    itemDefinition.getIconPathResolved(true)?.load<UTexture2D>()?.apply { return toBufferedImage() }
+    val linked: FortItemDefinition? = (itemDefinition as? AthenaCharacterItemDefinition)?.HeroDefinition?.value
+        ?: (itemDefinition as? AthenaPickaxeItemDefinition)?.WeaponDefinition?.value
+    if (linked != null) {
+        (linked.LargePreviewImage ?: linked.getIconPathResolved(true) ?: linked.getIconPathResolved(false))?.load<UTexture2D>()?.apply { return toBufferedImage() }
+    }
+    itemDefinition.getIconPathResolved(false)?.load<UTexture2D>()?.apply { return toBufferedImage() }
     return null
 }
 

@@ -129,4 +129,14 @@ public class FortItemDefinition extends ItemDefinitionBase {
         FGameplayTagContainer tags = getGameplayTags();
         return tags != null ? tags.getValue("Cosmetics.UserFacingFlags") : null;
     }
+
+    /**
+     * Returns the icon path, checking the DataList fallback where icons moved to
+     * ItemComponentData_Icon / FortItemComponentData_LargeIcon.
+     */
+    public FSoftObjectPath getIconPathResolved(boolean large) {
+        FStructFallback data = dataListEntry(large ? "FortItemComponentData_LargeIcon" : "ItemComponentData_Icon");
+        if (data == null) return null;
+        return data.getOrNull(large ? "LargeIcon" : "Icon", FSoftObjectPath.class);
+    }
 }
