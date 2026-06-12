@@ -165,6 +165,8 @@ private fun getImageWithVariants(container: ItemDefinitionContainer, locres: Loc
     var icon = container.icon
     //Don't include numeric and pattern channels (used for soccer skins, cannot be displayed properly)
     val vars = itemDef.ItemVariants.map { it.value }.filterIsInstance<FortCosmeticVariantBackedByArray>()
+    // A grid of fewer than 2 tiles adds nothing over the full-art card
+    if (vars.sumOf { it.variants?.size ?: 0 } < 2) return getImageNoVariants(container, locres)
     if (icon.width != variantsIconSize || icon.height != variantsIconSize)
         icon = icon.scale(
             variantsIconSize,
@@ -203,6 +205,7 @@ private fun getImageWithVariants(container: ItemDefinitionContainer, locres: Loc
     val maxVarSize = (availableX - (numChannels - 1) * 10) / totalRows
 
     var cY = 35
+    var drawnVariants = 0
     vars.forEach {
         val varCount = it.variants?.size ?: 0
         val channelName = it.VariantChannelName?.textForLocres(locres)
@@ -234,6 +237,7 @@ private fun getImageWithVariants(container: ItemDefinitionContainer, locres: Loc
             else g.paint = Color(255, 255, 255, 70)
             g.fillRect(cX, cY, varSize, varSize)
             g.drawImage(varIcon, cX, cY, null)
+            drawnVariants++
 
             val varName = varContainer.VariantName?.textForLocres(locres)
             if (varName != null) {
@@ -254,6 +258,9 @@ private fun getImageWithVariants(container: ItemDefinitionContainer, locres: Loc
         }
         cY += varSize + 10
     }
+
+    // Every variant preview failed to load (e.g. material-based previews) — an empty grid card is worse than the normal card
+    if (drawnVariants == 0) return getImageNoVariants(container, locres)
 
     g.drawImage(icon, result.width - 5 - variantsIconSize, result.height - 5 - variantsIconSize, null)
 
