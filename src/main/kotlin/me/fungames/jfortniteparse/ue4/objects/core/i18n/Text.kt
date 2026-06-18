@@ -29,7 +29,7 @@ class FText {
             ETextHistoryType.Base -> FTextHistory.Base(Ar)
             ETextHistoryType.NamedFormat,
             ETextHistoryType.OrderedFormat -> FTextHistory.OrderedFormat(Ar)
-            ETextHistoryType.ArgumentFormat -> TODO()
+            ETextHistoryType.ArgumentFormat -> FTextHistory.ArgumentFormat(Ar)
             ETextHistoryType.AsNumber,
             ETextHistoryType.AsPercent,
             ETextHistoryType.AsCurrency -> FTextHistory.AsCurrency(Ar)
@@ -140,6 +140,29 @@ sealed class FTextHistory {
         }
 
         constructor(sourceFmt: FText, arguments: Array<FFormatArgumentValue>) {
+            this.sourceFmt = sourceFmt
+            this.arguments = arguments
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            sourceFmt.serialize(Ar)
+            Ar.writeTArray(arguments) { it.serialize(Ar) }
+        }
+    }
+
+    class ArgumentFormat : FTextHistory {
+        var sourceFmt: FText
+        var arguments: Array<FFormatArgumentData>
+
+        override val text: String
+            get() = sourceFmt.text
+
+        constructor(Ar: FArchive) {
+            sourceFmt = FText(Ar)
+            arguments = Ar.readTArray { FFormatArgumentData(Ar) }
+        }
+
+        constructor(sourceFmt: FText, arguments: Array<FFormatArgumentData>) {
             this.sourceFmt = sourceFmt
             this.arguments = arguments
         }
@@ -358,5 +381,25 @@ class FFormatArgumentValue {
             EFormatArgumentType.Text -> (value as FText).serialize(Ar)
             EFormatArgumentType.Gender -> TODO("Gender Argument not supported yet")
         }
+    }
+}
+
+class FFormatArgumentData {
+    var argumentName: String
+    var argumentValue: FFormatArgumentValue
+
+    constructor(Ar: FArchive) {
+        argumentName = Ar.readString()
+        argumentValue = FFormatArgumentValue(Ar)
+    }
+
+    constructor(argumentName: String, argumentValue: FFormatArgumentValue) {
+        this.argumentName = argumentName
+        this.argumentValue = argumentValue
+    }
+
+    fun serialize(Ar: FArchiveWriter) {
+        Ar.writeString(argumentName)
+        argumentValue.serialize(Ar)
     }
 }
