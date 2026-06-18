@@ -137,6 +137,7 @@ object ObjectTypeRegistry {
         registerClass(CustomCharacterCharmData::class.java)
         registerClass(CustomCharacterPart::class.java)
         registerClass(CustomCharacterPartData::class.java)
+        registerClass(ExtractableItemDefinition::class.java)
         registerClass(FortAbilityKit::class.java)
         registerClass(FortAbilitySet::class.java)
         registerClass(FortAccoladeItemDefinition::class.java)
