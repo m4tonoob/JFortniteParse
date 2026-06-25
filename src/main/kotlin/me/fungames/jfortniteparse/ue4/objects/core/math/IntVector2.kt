@@ -1,0 +1,32 @@
+package me.fungames.jfortniteparse.ue4.objects.core.math
+
+import me.fungames.jfortniteparse.ue4.reader.FArchive
+import me.fungames.jfortniteparse.ue4.writer.FArchiveWriter
+
+/**
+ * Structure for integer vectors in 2-d space (FIntVector2). Two int32s, like FIntPoint.
+ */
+class FIntVector2 {
+    var x: Int
+
+    var y: Int
+
+    constructor(Ar: FArchive) {
+        x = Ar.readInt32()
+        y = Ar.readInt32()
+    }
+
+    fun serialize(Ar: FArchiveWriter) {
+        Ar.writeInt32(x)
+        Ar.writeInt32(y)
+    }
+
+    constructor() : this(0, 0)
+
+    constructor(x: Int, y: Int) {
+        this.x = x
+        this.y = y
+    }
+
+    override fun toString() = "X=%d Y=%d".format(x, y)
+}
