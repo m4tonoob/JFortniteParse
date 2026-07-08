@@ -1,6 +1,6 @@
 package me.fungames.jfortniteparse.ue4.locres
 
-enum class FnLanguage(val languageCode: String) {
+enum class FnLanguage(val languageCode: String, val localizationFolder: String = languageCode) {
 
     AR("ar"),
     DE("de"),
@@ -15,7 +15,7 @@ enum class FnLanguage(val languageCode: String) {
     PT_BR("pt-BR"),
     RU("ru"),
     TR("tr"),
-    ZH_CN("zh-CN"),
+    ZH_CN("zh-CN", "zh-Hans"), // languageCode stays "zh-CN" for Discord/preference matching; Epic ships the locres folder as "zh-Hans"
     ZH_HANT("zh-Hant"),
     UNKNOWN("unknown");
 

@@ -145,9 +145,12 @@ abstract class FileProvider {
 
     open fun getLocresLanguageByPath(filePath: String) = FnLanguage.valueOfLanguageCode(filePath.split("Localization/(.*?)/".toRegex())[1].takeWhile { it != '/' })
 
+    open fun locresFiles(ln: FnLanguage): List<GameFile> = files.values
+        .filter { (it.path.startsWith("${gameName}/Content/Localization/", ignoreCase = true) || it.path.contains("/SaveTheWorld/Content/Localization/", ignoreCase = true)) && it.path.contains("/${ln.localizationFolder}/", ignoreCase = true) && it.path.endsWith(".locres") }
+        .sortedBy { if (it.path.startsWith("${gameName}/Content/Localization/", ignoreCase = true)) 0 else 1 }
+
     open fun loadLocres(ln: FnLanguage): Locres? {
-        val files = files.values
-            .filter { it.path.startsWith("${gameName}/Content/Localization", ignoreCase = true) && it.path.contains("/${ln.languageCode}/", ignoreCase = true) && it.path.endsWith(".locres") }
+        val files = locresFiles(ln)
         if (files.isEmpty()) return null
         var first: Locres? = null
         files.forEach { file ->
