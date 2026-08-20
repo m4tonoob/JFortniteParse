@@ -6,6 +6,7 @@ import me.fungames.jfortniteparse.exceptions.InvalidAesKeyException
 import me.fungames.jfortniteparse.exceptions.ParserException
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_Latest
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_PathHashIndex
+import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_SortedDirectoryIndex
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_V12
 import me.fungames.jfortniteparse.ue4.pak.objects.FPakCompressedBlock
 import me.fungames.jfortniteparse.ue4.pak.objects.FPakEntry
@@ -171,45 +172,58 @@ class PakFileReader : AbstractAesVfsReader {
         val encodedPakEntriesSize = primaryIndexAr.readInt32()
         val encodedPakEntries = primaryIndexAr.readBuffer(encodedPakEntriesSize)
 
-        if (primaryIndexAr.readInt32() < 0)
+        val nonEncodedEntryCount = primaryIndexAr.readInt32()
+        if (nonEncodedEntryCount < 0)
             throw ParserException("Corrupt pak PrimaryIndex detected!")
+        // The flat directory index refers to these by negative location; the nested formats never did,
+        // so only the new format pays the cost of materializing them
+        val nonEncodedEntries = if (pakInfo.version >= PakVersion_SortedDirectoryIndex) {
+            Array(nonEncodedEntryCount) { FPakEntry(primaryIndexAr, false) }
+        } else emptyArray()
 
         val directoryIndexAr = readIndexData(directoryIndexOffset, directoryIndexSize, directoryIndexHash)
-        // PAK v12 changed string format in directory index - strings are no longer null-terminated
         logger.info("Reading directory index for $name, version ${pakInfo.version}, expected file count: $fileCount")
-        val directoryIndex = if (pakInfo.version >= PakVersion_V12) {
-            directoryIndexAr.readTMap {
-                readStringV12(it) to it.readTMap { it2 ->
-                    readStringV12(it2) to it2.readInt32()
+
+        val encodedPakEntriesAr = FByteArchive(encodedPakEntries)
+        val tempMap = HashMap<String, GameFile>(fileCount)
+
+        if (pakInfo.version >= PakVersion_SortedDirectoryIndex) {
+            readFlatDirectoryIndex(directoryIndexAr, encodedPakEntriesAr, nonEncodedEntries, tempMap)
+        } else {
+            // PAK v12 changed string format in directory index - strings are no longer null-terminated
+            val directoryIndex = if (pakInfo.version >= PakVersion_V12) {
+                directoryIndexAr.readTMap {
+                    readStringV12(it) to it.readTMap { it2 ->
+                        readStringV12(it2) to it2.readInt32()
+                    }
+                }
+            } else {
+                directoryIndexAr.readTMap {
+                    it.readString() to it.readTMap { it2 ->
+                        it2.readString() to it2.readInt32()
+                    }
                 }
             }
-        } else {
-            directoryIndexAr.readTMap {
-                it.readString() to it.readTMap { it2 ->
-                    it2.readString() to it2.readInt32()
+            logger.info("Directory index loaded: ${directoryIndex.size} directories")
+
+            val begin = encodedPakEntriesAr.pos()
+            for ((dirName, dirContent) in directoryIndex) {
+                for ((fileName, offset) in dirContent) {
+                    val path = dirName + fileName
+                    encodedPakEntriesAr.seek(begin + offset)
+                    val entry = readBitEntry(encodedPakEntriesAr)
+                    entry.name = path
+                    if (entry.isEncrypted)
+                        encryptedFileCount++
+                    tempMap[mountPoint + path] = GameFile(entry, mountPoint, name)
                 }
             }
         }
-        logger.info("Directory index loaded: ${directoryIndex.size} directories")
 
-        val encodedPakEntriesAr = FByteArchive(encodedPakEntries)
-        val begin = encodedPakEntriesAr.pos()
-
-        val tempMap = HashMap<String, GameFile>(fileCount)
         var finalFileCount = 0
-        for ((dirName, dirContent) in directoryIndex) {
-            for ((fileName, offset) in dirContent) {
-                val path = dirName + fileName
-                encodedPakEntriesAr.seek(begin + offset)
-                val entry = readBitEntry(encodedPakEntriesAr)
-                entry.name = path
-                if (entry.isEncrypted)
-                    encryptedFileCount++
-                val gameFile = GameFile(entry, mountPoint, name)
-                tempMap[mountPoint + path] = gameFile
-                if (!path.endsWith(".uexp") && !path.endsWith(".ubulk"))
-                    finalFileCount++
-            }
+        for (path in tempMap.keys) {
+            if (!path.endsWith(".uexp") && !path.endsWith(".ubulk"))
+                finalFileCount++
         }
 
         val files = ArrayList<GameFile>(finalFileCount)
@@ -235,6 +249,89 @@ class PakFileReader : AbstractAesVfsReader {
      * Read string without null terminator for PAK v12+
      * In v12, directory index strings no longer have null terminators
      */
+    /**
+     * UE5.9+ replaced the nested TMap directory index with a flat, prefix-compressed blob
+     * (FPakFlatDirectoryIndex). Directory names share a prefix with the previous entry, and file
+     * names live in one big blob addressed by offset. Ported from CUE4Parse's ReadFlatDirectoryIndex.
+     */
+    private fun readFlatDirectoryIndex(
+        Ar: FPakArchive,
+        encodedPakEntriesAr: FByteArchive,
+        nonEncodedEntries: Array<FPakEntry>,
+        tempMap: HashMap<String, GameFile>
+    ) {
+        if (Ar.readInt32() != FLAT_DIRECTORY_INDEX_MAGIC)
+            throw ParserException("Corrupt pak FullDirectoryIndex (flat) detected")
+
+        val numDirs = Ar.readInt32()
+        val numFiles = Ar.readInt32()
+        val restartInterval = Ar.readInt32()
+        val dirBlobBytes = Ar.readInt32()
+        val fileBlobBytes = Ar.readInt32()
+        val numPathHashes = Ar.readInt32()
+        Ar.skip(4) // pad that 8-aligns the following hash table
+
+        if (numDirs < 0 || numFiles < 0 || restartInterval <= 0 || dirBlobBytes < 0 || fileBlobBytes < 0 || numPathHashes < 0)
+            throw ParserException("Corrupt pak FullDirectoryIndex (flat) detected")
+
+        val numDirAnchors = (numDirs + restartInterval - 1) / restartInterval
+        Ar.skip(numPathHashes.toLong() * 8) // SortedPathHashes
+        Ar.skip(numPathHashes.toLong() * 4) // HashLocations
+        Ar.skip((numDirAnchors.toLong() + 1) * 4) // DirAnchorOffset
+
+        val dirFileStart = IntArray(numDirs + 1) { Ar.readInt32() }
+        val fileNameOffsets = IntArray(numFiles + 1) { Ar.readInt32() }
+        val fileLocations = IntArray(numFiles) { Ar.readInt32() }
+        val dirBlob = Ar.read(dirBlobBytes)
+        val fileBlob = Ar.read(fileBlobBytes)
+
+        val begin = encodedPakEntriesAr.pos()
+        var dirPos = 0
+        var nameBytes = ByteArray(256)
+        for (dirIndex in 0 until numDirs) {
+            val sharedLen = readInt32LE(dirBlob, dirPos)
+            val suffixLen = readInt32LE(dirBlob, dirPos + 4)
+            dirPos += 8
+            val nameLen = sharedLen + suffixLen
+            if (nameBytes.size < nameLen)
+                nameBytes = nameBytes.copyOf(maxOf(nameLen, nameBytes.size * 2))
+            System.arraycopy(dirBlob, dirPos, nameBytes, sharedLen, suffixLen)
+            dirPos += suffixLen
+            val dir = String(nameBytes, 0, nameLen, Charsets.UTF_8)
+
+            for (global in dirFileStart[dirIndex] until dirFileStart[dirIndex + 1]) {
+                val location = fileLocations[global]
+                if (location == Int.MIN_VALUE)
+                    continue
+                val nameStart = fileNameOffsets[global]
+                val fileName = String(fileBlob, nameStart, fileNameOffsets[global + 1] - nameStart, Charsets.UTF_8)
+                val path = dir + fileName
+                val entry = if (location >= 0) {
+                    encodedPakEntriesAr.seek(begin + location)
+                    readBitEntry(encodedPakEntriesAr)
+                } else {
+                    val entryIndex = -location - 1
+                    if (entryIndex >= nonEncodedEntries.size) {
+                        logger.warn("Invalid nonencoded pak entry with index $entryIndex, path $path")
+                        continue
+                    }
+                    nonEncodedEntries[entryIndex]
+                }
+                entry.name = path
+                if (entry.isEncrypted)
+                    encryptedFileCount++
+                tempMap[mountPoint + path] = GameFile(entry, mountPoint, name)
+            }
+        }
+        logger.info("Flat directory index loaded: $numDirs directories, $numFiles files")
+    }
+
+    private fun readInt32LE(data: ByteArray, offset: Int) =
+        (data[offset].toInt() and 0xFF) or
+        ((data[offset + 1].toInt() and 0xFF) shl 8) or
+        ((data[offset + 2].toInt() and 0xFF) shl 16) or
+        ((data[offset + 3].toInt() and 0xFF) shl 24)
+
     private fun readStringV12(Ar: FArchive): String {
         val length = Ar.readInt32()
         if (length < -131072 || length > 131072)
@@ -431,6 +528,9 @@ class PakFileReader : AbstractAesVfsReader {
     companion object {
         val logger = KotlinLogging.logger("PakFile")
         val decryptedBuffersDir = File("DecryptedBuffers")
+
+        /** 'PFDQ' - marks the flat FPakFlatDirectoryIndex used from pak version 13 onwards */
+        const val FLAT_DIRECTORY_INDEX_MAGIC = 0x50464451
     }
 
 

@@ -16,9 +16,12 @@ class FPakInfo {
         const val size8 = size + 4 * 32
         const val size8a = size8 + 32
         const val size9 = size8a + 1
+        // UE6.0 (Fortnite v42.00) appends PakchunkIndex as an int32. Measured at size8a + 4 on shipped paks:
+        // the version 9 frozen-index byte is absent, so this is not CUE4Parse's Size9a (size9 + 4).
+        const val size9a = size8a + 4
 
-        val offsetsToTry =              arrayOf(size, size8, size8a, size9)
-        val maxNumCompressionMethods =  arrayOf(0   , 4    , 5     , 5    )
+        val offsetsToTry =              arrayOf(size, size8, size8a, size9, size9a)
+        val maxNumCompressionMethods =  arrayOf(0   , 4    , 5     , 5    , 5     )
 
         fun readPakInfo(Ar: FPakArchive): FPakInfo {
             val pakSize = Ar.pakSize()
