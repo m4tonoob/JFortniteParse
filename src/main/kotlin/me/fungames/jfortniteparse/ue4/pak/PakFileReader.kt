@@ -4,6 +4,7 @@ import me.fungames.jfortniteparse.compression.Compression
 import me.fungames.jfortniteparse.encryption.aes.Aes
 import me.fungames.jfortniteparse.exceptions.InvalidAesKeyException
 import me.fungames.jfortniteparse.exceptions.ParserException
+import me.fungames.jfortniteparse.ue4.io.IO_ENCRYPTION_METHOD_AES_CTR
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_Latest
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_PathHashIndex
 import me.fungames.jfortniteparse.ue4.pak.enums.PakVersion_SortedDirectoryIndex
@@ -65,6 +66,10 @@ class PakFileReader : AbstractAesVfsReader {
         useDecryptedBuffers = !pakInfo.encryptionKeyGuid.isValid() && isEncrypted() && decryptedBuffersDir.exists()
         if (pakInfo.version > PakVersion_Latest)
             logger.warn("Pak file \"$name\" has unsupported version ${pakInfo.version}")
+        // Fortnite 42.10 paks record method 1 (AES-ECB) with zero IVs. CTR paks would need per-entry IVs in the
+        // encoded index and IV-aware index decryption; fail loudly rather than decrypt garbage.
+        if (pakInfo.encryptionMethod == IO_ENCRYPTION_METHOD_AES_CTR)
+            throw ParserException("Pak file \"$name\" uses AES-CTR encryption, which is not supported yet")
         Ar.pakInfo = pakInfo
     }
 

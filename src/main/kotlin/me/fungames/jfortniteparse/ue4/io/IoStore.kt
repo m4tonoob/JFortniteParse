@@ -34,6 +34,8 @@ enum class EIoStoreTocVersion {
     OnDemandMetaData,
     RemovedOnDemandMetaData,
     ReplaceIoChunkHashWithIoHash,
+    AddedSourceHashes,          // UE6.0 - header reserved7 became TocSourceHashCount
+    ContainerEncryptionMethod,  // UE6.0 (Fortnite 42.10) - header carries EncryptionMethod + IV count; IV array follows the compression blocks
 }
 
 const val IO_CONTAINER_FLAG_COMPRESSED = 1 shl 0
@@ -66,13 +68,18 @@ class FIoStoreTocHeader {
     var containerId: FIoContainerId
     var encryptionKeyGuid: FGuid
     var containerFlags: Int //EIoContainerFlags
-    var reserved3: UByte
+    /** TOC version 10+: one of the IO_ENCRYPTION_METHOD_* values (was reserved3). Derived from the flags for older TOCs. */
+    var encryptionMethod: Int
     var reserved4: UShort
     var tocChunkPerfectHashSeedsCount: UInt
     var partitionSize: ULong
     var tocChunksWithoutPerfectHashCount: UInt
-    var reserved7: UInt
-    var reserved8: ULongArray //size: 5
+    /** TOC version 9+: was reserved7. */
+    var tocSourceHashCount: UInt
+    /** TOC version 10+: number of 12-byte IVs stored after the compression blocks (was reserved8[0]'s low half). */
+    var encryptionIVCount: UInt
+    var reserved8: UInt
+    var reserved9: ULongArray //size: 4
 
     constructor(Ar: FArchive) {
         Ar.read(tocMagic)
@@ -97,13 +104,20 @@ class FIoStoreTocHeader {
         containerId = FIoContainerId(Ar)
         encryptionKeyGuid = FGuid(Ar)
         containerFlags = Ar.read()
-        reserved3 = Ar.readUInt8()
+        encryptionMethod = Ar.readUInt8().toInt()
         reserved4 = Ar.readUInt16()
         tocChunkPerfectHashSeedsCount = Ar.readUInt32()
         partitionSize = Ar.readUInt64()
         tocChunksWithoutPerfectHashCount = Ar.readUInt32()
-        reserved7 = Ar.readUInt32()
-        reserved8 = ULongArray(5) { Ar.readUInt64() }
+        tocSourceHashCount = Ar.readUInt32()
+        encryptionIVCount = Ar.readUInt32()
+        reserved8 = Ar.readUInt32()
+        reserved9 = ULongArray(4) { Ar.readUInt64() }
+        if (version < EIoStoreTocVersion.ContainerEncryptionMethod) {
+            // Older TOCs left these bytes reserved (zero). The scheme is implied by the encrypted flag.
+            encryptionMethod = if (containerFlags and IO_CONTAINER_FLAG_ENCRYPTED != 0) IO_ENCRYPTION_METHOD_AES else IO_ENCRYPTION_METHOD_NONE
+            encryptionIVCount = 0u
+        }
     }
 
     fun makeMagic() {
@@ -253,7 +267,7 @@ class FIoStoreReaderImpl : AbstractAesVfsReader {
             val decryptionKey = if (isEncrypted()) {
                 aesKey ?: throw ParserException("Reading an encrypted index requires a valid encryption key")
             } else null
-            val out = FIoDirectoryIndexReaderImpl(tocResource.directoryIndexBuffer!!, decryptionKey)
+            val out = FIoDirectoryIndexReaderImpl(tocResource.directoryIndexBuffer!!, decryptionKey, directoryIndexIv())
             tocResource.directoryIndexBuffer = null
             _directoryIndexReader = out
             return out
@@ -304,6 +318,32 @@ class FIoStoreReaderImpl : AbstractAesVfsReader {
     val containerFlags get() = tocResource.header.containerFlags
     override val encryptionKeyGuid get() = tocResource.header.encryptionKeyGuid
     override fun isEncrypted() = (tocResource.header.containerFlags and IO_CONTAINER_FLAG_ENCRYPTED) != 0
+    val isAesCtr get() = tocResource.header.encryptionMethod == IO_ENCRYPTION_METHOD_AES_CTR
+
+    /** The directory index's nonce is the last IV in the TOC (AES_CTR containers only). */
+    private fun directoryIndexIv() = if (isAesCtr) tocResource.encryptionIVs.last() else null
+
+    /** Decrypts one raw compression block in place with whichever scheme the container declares. */
+    private fun decryptBlock(buffer: ByteArray, rawSize: Int, blockIndex: Int) {
+        val key = aesKey ?: throw ParserException("Reading an encrypted chunk requires a valid encryption key")
+        if (isAesCtr) {
+            Aes.cryptCtr(buffer, 0, rawSize, key, tocResource.encryptionIVs[blockIndex].bytes)
+        } else {
+            Aes.decryptData(buffer, 0, rawSize, key)
+        }
+    }
+
+    /**
+     * The base implementation decrypts the check bytes with AES-ECB in place. A CTR container needs the directory
+     * index IV, and the buffer must survive a wrong guess, so test on a copy.
+     */
+    override fun testAesKey(key: ByteArray): Boolean {
+        if (!isEncrypted()) return true
+        if (!isAesCtr) return super.testAesKey(key)
+        val probe = indexCheckBytes().copyOf(min(indexCheckBytes().size, MAX_MOUNTPOINT_TEST_LENGTH))
+        Aes.cryptCtr(probe, 0, probe.size, key, directoryIndexIv()!!.bytes)
+        return isValidIndex(probe)
+    }
 
     override fun readIndex(): List<GameFile> {
         val start = System.currentTimeMillis()
@@ -395,7 +435,7 @@ class FIoStoreReaderImpl : AbstractAesVfsReader {
             exAr.seek(partitionOffset)
             exAr.read(threadBuffers.compressedBuffer!!, 0, rawSize.toInt())
             if (isEncrypted()) {
-                Aes.decryptData(threadBuffers.compressedBuffer!!, 0, rawSize.toInt(), aesKey!!)
+                decryptBlock(threadBuffers.compressedBuffer!!, rawSize.toInt(), blockIndex)
             }
             val src = if (compressionBlock.compressionMethodIndex == 0u.toUByte()) {
                 threadBuffers.compressedBuffer!!
@@ -519,6 +559,8 @@ class FIoStoreTocResource {
     var chunkPerfectHashSeeds: Array<Int>? = null
     var chunkIndicesWithoutPerfectHash: Array<Int>? = null
     var compressionBlocks: Array<FIoStoreTocCompressedBlockEntry>
+    /** AES_CTR containers: one IV per compression block, plus a final one for the directory index when indexed. Empty otherwise. */
+    var encryptionIVs: Array<FIoStoreEncryptionIV> = emptyArray()
     var compressionMethods: Array<String>
     //var chunkBlockSignatures: Array<ByteArray> // FSHAHash
     var chunkMetas: Array<FIoStoreTocEntryMeta>
@@ -587,6 +629,15 @@ class FIoStoreTocResource {
 
         // Compression blocks
         compressionBlocks = Array(header.tocCompressedBlockEntryCount.toInt()) { FIoStoreTocCompressedBlockEntry(tocBuffer) }
+
+        // Encryption IVs (TOC version 10+). Sits between the compression blocks and the compression method names,
+        // so a TOC that lies about its count would shift everything after it — check the count first.
+        val directoryIndexIVCount = if (header.containerFlags and IO_CONTAINER_FLAG_INDEXED != 0) 1u else 0u
+        val expectedIVCount = if (header.encryptionMethod == IO_ENCRYPTION_METHOD_AES_CTR) header.tocCompressedBlockEntryCount + directoryIndexIVCount else 0u
+        if (header.encryptionIVCount != expectedIVCount) {
+            throw FIoStatusException(EIoErrorCode.CorruptToc, "TOC has ${header.encryptionIVCount} encryption IVs but method ${header.encryptionMethod} over ${header.tocCompressedBlockEntryCount} compression blocks needs $expectedIVCount", tocBuffer)
+        }
+        encryptionIVs = Array(header.encryptionIVCount.toInt()) { FIoStoreEncryptionIV(tocBuffer) }
 
         // Compression methods
         compressionMethods = Array(header.compressionMethodNameCount.toInt() + 1) {

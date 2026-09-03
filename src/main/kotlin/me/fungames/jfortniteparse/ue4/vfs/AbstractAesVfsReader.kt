@@ -47,7 +47,7 @@ abstract class AbstractAesVfsReader(path: String, versions: VersionContainer) : 
     /**
      * Test whether the given encryption key is valid by attempting to read the pak mount point and validating it
      */
-    fun testAesKey(key: ByteArray) = !isEncrypted() || testAesKey(indexCheckBytes(), key)
+    open fun testAesKey(key: ByteArray) = !isEncrypted() || testAesKey(indexCheckBytes(), key)
 
     /**
      * Test whether the given encryption key is valid by attempting to read the pak mount point and validating it

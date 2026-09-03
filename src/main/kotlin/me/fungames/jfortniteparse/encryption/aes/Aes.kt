@@ -3,6 +3,7 @@ package me.fungames.jfortniteparse.encryption.aes
 import me.fungames.jfortniteparse.exceptions.InvalidAesKeyException
 import me.fungames.jfortniteparse.util.parseHexBinary
 import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 object Aes {
@@ -39,4 +40,27 @@ object Aes {
             doFinal(contents, offBytes, numBytes, contents, offBytes)
         }
     }
+
+    /**
+     * Unreal's AES-CTR stream cipher (UE6.0, Fortnite 42.10+), applied in place. Encrypt and decrypt are the same
+     * operation. The counter block is the 12-byte [iv] followed by a big-endian uint32 block index starting at
+     * [initialBlockIndex] — which is exactly the JDK's CTR mode over a 16-byte IV, so we let it do the counting.
+     * [numBytes] need not be a multiple of 16: the last keystream block is simply truncated.
+     */
+    fun cryptCtr(contents: ByteArray, offBytes: Int, numBytes: Int, keyBytes: ByteArray, iv: ByteArray, initialBlockIndex: Int = 0) {
+        require(iv.size == CTR_IV_SIZE) { "Unreal AES-CTR IVs must be $CTR_IV_SIZE bytes, got ${iv.size}" }
+        if (numBytes == 0) return
+        val counter = ByteArray(BLOCK_SIZE)
+        System.arraycopy(iv, 0, counter, 0, CTR_IV_SIZE)
+        counter[12] = (initialBlockIndex ushr 24).toByte()
+        counter[13] = (initialBlockIndex ushr 16).toByte()
+        counter[14] = (initialBlockIndex ushr 8).toByte()
+        counter[15] = initialBlockIndex.toByte()
+        Cipher.getInstance("AES/CTR/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), IvParameterSpec(counter))
+            doFinal(contents, offBytes, numBytes, contents, offBytes)
+        }
+    }
+
+    const val CTR_IV_SIZE = 12
 }

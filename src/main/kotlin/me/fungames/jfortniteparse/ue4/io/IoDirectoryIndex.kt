@@ -45,13 +45,21 @@ class FIoDirectoryIndexResource {
     }
 }
 
-class FIoDirectoryIndexReaderImpl(buffer: ByteArray, decryptionKey: ByteArray?) : FIoDirectoryIndexReader {
+/**
+ * [directoryIndexIv] is the AES-CTR nonce for the directory index (TOC version 10+, AES_CTR containers).
+ * Null means the classic AES-ECB scheme.
+ */
+class FIoDirectoryIndexReaderImpl(buffer: ByteArray, decryptionKey: ByteArray?, directoryIndexIv: FIoStoreEncryptionIV? = null) : FIoDirectoryIndexReader {
     var directoryIndex = buffer.let {
         if (it.isEmpty()) {
             throw FIoStatus.INVALID.toException()
         }
         if (decryptionKey != null) {
-            Aes.decryptData(it, decryptionKey)
+            if (directoryIndexIv != null) {
+                Aes.cryptCtr(it, 0, it.size, decryptionKey, directoryIndexIv.bytes)
+            } else {
+                Aes.decryptData(it, decryptionKey)
+            }
         }
         FIoDirectoryIndexResource(FByteArchive(it))
     }

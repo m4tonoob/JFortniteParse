@@ -2,6 +2,8 @@ package me.fungames.jfortniteparse.ue4.pak.objects
 
 import me.fungames.jfortniteparse.LOG_JFP
 import me.fungames.jfortniteparse.exceptions.ParserException
+import me.fungames.jfortniteparse.ue4.io.FIoStoreEncryptionIV
+import me.fungames.jfortniteparse.ue4.io.IO_ENCRYPTION_METHOD_AES
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.pak.enums.*
 import me.fungames.jfortniteparse.ue4.pak.reader.FPakArchive
@@ -19,9 +21,13 @@ class FPakInfo {
         // UE6.0 (Fortnite v42.00) appends PakchunkIndex as an int32. Measured at size8a + 4 on shipped paks:
         // the version 9 frozen-index byte is absent, so this is not CUE4Parse's Size9a (size9 + 4).
         const val size9a = size8a + 4
+        // UE6.0 (Fortnite v42.10, pak version 15) appends EncryptionMethod (uint8) + three 12-byte IVs
+        // (primary index, path-hash index, full directory index). Measured at 262 bytes on shipped paks;
+        // matches CUE4Parse's Size10 = Size9a + 1 + 3 * 12.
+        const val size10 = size9a + 1 + 3 * 12
 
-        val offsetsToTry =              arrayOf(size, size8, size8a, size9, size9a)
-        val maxNumCompressionMethods =  arrayOf(0   , 4    , 5     , 5    , 5     )
+        val offsetsToTry =              arrayOf(size, size8, size8a, size9, size9a, size10)
+        val maxNumCompressionMethods =  arrayOf(0   , 4    , 5     , 5    , 5     , 5     )
 
         fun readPakInfo(Ar: FPakArchive): FPakInfo {
             val pakSize = Ar.pakSize()
@@ -56,6 +62,13 @@ class FPakInfo {
     var indexHash: ByteArray
     var compressionMethods: MutableList<String>
     var indexIsFrozen: Boolean = false
+    /** Pak version 14+: chunk index from the trailer. -1 (INDEX_NONE) when the pak predates it. */
+    var pakchunkIndex: Int = -1
+    /** Pak version 15+: how the index and encrypted entries were encrypted. Older paks are AES-ECB by definition. */
+    var encryptionMethod: Int = IO_ENCRYPTION_METHOD_AES
+    var indexIv: FIoStoreEncryptionIV? = null
+    var pathHashIndexIv: FIoStoreEncryptionIV? = null
+    var fullDirectoryIndexIv: FIoStoreEncryptionIV? = null
 
     constructor(Ar: FArchive, maxNumCompressionMethods: Int = 4) {
         // New FPakInfo fields
@@ -86,6 +99,15 @@ class FPakInfo {
                     break
                 compressionMethods.add(str)
             }
+        }
+        if (this.version >= PakVersion_PakchunkIndex) {
+            pakchunkIndex = Ar.readInt32()
+        }
+        if (this.version >= PakVersion_EncryptionMethod) {
+            encryptionMethod = Ar.readUInt8().toInt()
+            indexIv = FIoStoreEncryptionIV(Ar)
+            pathHashIndexIv = FIoStoreEncryptionIV(Ar)
+            fullDirectoryIndexIv = FIoStoreEncryptionIV(Ar)
         }
 
         // Reset new fields to their default states when serializing older pak format.
