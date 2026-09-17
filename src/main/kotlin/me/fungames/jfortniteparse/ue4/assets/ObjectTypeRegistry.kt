@@ -39,6 +39,7 @@ object ObjectTypeRegistry {
         registerClass(UAssetImportData::class.java)
         registerClass(UAudioComponent::class.java)
         registerClass(UBlueprintGeneratedClass::class.java)
+        registerClass(UObjectRedirector::class.java)
         registerClass(UBoxComponent::class.java)
         registerClass(UCapsuleComponent::class.java)
         registerClass(UChildActorComponent::class.java)
