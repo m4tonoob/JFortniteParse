@@ -11,6 +11,7 @@ import me.fungames.jfortniteparse.ue4.objects.uobject.FName.Companion.NAME_None
 import me.fungames.jfortniteparse.ue4.objects.uobject.FPackageIndex
 import me.fungames.jfortniteparse.ue4.versions.FCoreObjectVersion
 import me.fungames.jfortniteparse.ue4.versions.FFrameworkObjectVersion
+import me.fungames.jfortniteparse.ue4.versions.GAME_UE5
 
 @OnlyAnnotated
 open class UStruct : UObject() {
@@ -63,7 +64,10 @@ open class FField {
 
     open fun deserialize(Ar: FAssetArchive) {
         name = Ar.readFName()
-        flags = Ar.readUInt32()
+        // UE 5.8+ cooked (editor-filtered) packages drop the flags field.
+        if (Ar.game < GAME_UE5(8) || !Ar.isFilterEditorOnly) {
+            flags = Ar.readUInt32()
+        }
     }
 
     companion object {
@@ -87,7 +91,8 @@ open class FField {
             "MulticastDelegateProperty" -> FMulticastDelegateProperty()
             "MulticastInlineDelegateProperty" -> FMulticastInlineDelegateProperty()
             "NameProperty" -> FNameProperty()
-            "ObjectProperty" -> FObjectProperty()
+            "ObjectProperty", "ObjectPtrProperty" -> FObjectProperty()
+            "OptionalProperty" -> FOptionalProperty()
             "SetProperty" -> FSetProperty()
             "SoftClassProperty" -> FSoftClassProperty()
             "SoftObjectProperty" -> FSoftObjectProperty()
@@ -97,6 +102,8 @@ open class FField {
             "UInt16Property" -> FUInt16Property()
             "UInt32Property" -> FUInt32Property()
             "UInt64Property" -> FUInt64Property()
+            "Utf8StrProperty" -> FUtf8StrProperty()
+            "WeakObjectProperty" -> FWeakObjectProperty()
             else -> null
         }
     }
@@ -270,6 +277,17 @@ class FSoftClassProperty : FObjectProperty() {
 
 class FSoftObjectProperty : FObjectProperty()
 
+class FWeakObjectProperty : FObjectProperty()
+
+class FOptionalProperty : FPropertySerialized() {
+    var valueProperty: FPropertySerialized? = null
+
+    override fun deserialize(Ar: FAssetArchive) {
+        super.deserialize(Ar)
+        valueProperty = serializeSingleField(Ar) as FPropertySerialized?
+    }
+}
+
 class FSetProperty : FPropertySerialized() {
     var elementProp: FPropertySerialized? = null
 
@@ -291,6 +309,8 @@ class FStructProperty : FPropertySerialized() {
 }
 
 class FTextProperty : FPropertySerialized()
+
+class FUtf8StrProperty : FPropertySerialized()
 
 class FUInt16Property : FNumericProperty()
 

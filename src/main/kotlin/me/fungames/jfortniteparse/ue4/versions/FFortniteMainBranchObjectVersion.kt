@@ -166,11 +166,24 @@ object FFortniteMainBranchObjectVersion {
     // Added bShowCurve for movie scene float channel serialization
     const val SerializeFloatChannelShowCurve = 53
 
+    // Cooked blueprint classes carry an EditorTags map
+    const val BPGCCookedEditorTags = 57
+    const val GravityOverrideDefinedInWorldSpace = 59
+    const val WorldPartitionHLODActorDescSerializeStats = 80
+    const val WorldPartitionHLODActorUseSourceCellGuid = 83
+    const val WaterBodyStaticMeshFixup = 111
+    const val SkeletalHalfEdgeData = 134
+    const val SolverIterationsDataSupportInChaosVisualDebugger = 170
+
     // FSoftObjectPath::SubPathString changed to FUtf8String
     const val SoftObjectPathUtf8SubPaths = 192
 
+    const val PCGChangedSurfaceSamplerDefaultGridCreationMode = 207
+    const val LandscapeAdvancedWeightBlending = 225
+
     // -----<new versions can be added above this line>-------------------------------------------------
-    const val LatestVersion = SerializeFloatChannelShowCurve
+    const val VersionPlusOne = 269
+    const val LatestVersion = VersionPlusOne - 1
 
     @JvmField val GUID = FGuid(0x601D1886u, 0xAC644F84u, 0xAA16D3DEu, 0x0DEAC7D6u)
 
@@ -189,6 +202,15 @@ object FFortniteMainBranchObjectVersion {
             game < GAME_UE4(24) -> SupportVirtualBoneInRetargeting
             game < GAME_UE4(26) -> AnimLayerGuidConformation
             game < GAME_UE4(27) -> ChaosSolverPropertiesMoved
+            game < GAME_UE5(0) -> RemoveLandscapeWaterInfo
+            game < GAME_UE5(1) -> GravityOverrideDefinedInWorldSpace
+            game < GAME_UE5(2) -> WorldPartitionHLODActorDescSerializeStats
+            game < GAME_UE5(3) -> WorldPartitionHLODActorUseSourceCellGuid
+            game < GAME_UE5(4) -> WaterBodyStaticMeshFixup
+            game < GAME_UE5(5) -> SkeletalHalfEdgeData
+            game < GAME_UE5(6) -> SolverIterationsDataSupportInChaosVisualDebugger
+            game < GAME_UE5(7) -> PCGChangedSurfaceSamplerDefaultGridCreationMode
+            game < GAME_UE5(8) -> LandscapeAdvancedWeightBlending
             else -> LatestVersion
         }
     }
