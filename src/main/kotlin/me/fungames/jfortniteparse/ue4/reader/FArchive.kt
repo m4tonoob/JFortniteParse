@@ -68,7 +68,13 @@ abstract class FArchive : Cloneable, InputStream {
         //if (!rangeCheck(pos() + size))
         //    throw ParserException("Serializing behind stopper (${pos()}+${size} > ${size()})", this)
         val res = ByteArray(size)
-        read(res)
+        // A stream may return fewer bytes than asked; keep reading until full or end of data.
+        var off = 0
+        while (off < size) {
+            val n = read(res, off, size - off)
+            if (n <= 0) break
+            off += n
+        }
         return res
     }
 

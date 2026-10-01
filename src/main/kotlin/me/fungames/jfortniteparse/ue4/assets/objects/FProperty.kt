@@ -70,6 +70,8 @@ sealed class FProperty {
                 map
             }
             value is FPackageIndex && Lazy::class.java.isAssignableFrom(clazz) -> value.owner?.findObject<UObject>(value)
+            // Object fields cooked as soft paths load lazily, as in CUE4Parse.
+            value is FSoftObjectPath && Lazy::class.java.isAssignableFrom(clazz) -> if (value.assetPathName.isNone()) null else lazy { value.load<UObject>() }
             this is EnumProperty && clazz.isEnum -> {
                 val storedEnum = name.text
                 val sep = storedEnum.indexOf("::")
