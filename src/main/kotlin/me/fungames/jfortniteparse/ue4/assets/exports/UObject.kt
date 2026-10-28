@@ -9,6 +9,7 @@ import me.fungames.jfortniteparse.ue4.assets.JsonSerializer.toJson
 import me.fungames.jfortniteparse.ue4.assets.Package
 import me.fungames.jfortniteparse.ue4.assets.ResolvedObject
 import me.fungames.jfortniteparse.ue4.assets.objects.FPropertyTag
+import me.fungames.jfortniteparse.ue4.assets.objects.FStructFallback
 import me.fungames.jfortniteparse.ue4.assets.objects.IPropertyHolder
 import me.fungames.jfortniteparse.ue4.versions.EUnrealEngineObjectUE5Version
 import me.fungames.jfortniteparse.ue4.assets.reader.FAssetArchive
@@ -20,6 +21,8 @@ import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.objects.uobject.EObjectFlags
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
 import me.fungames.jfortniteparse.ue4.objects.uobject.FObjectExport
+import me.fungames.jfortniteparse.ue4.objects.uobject.FPackageIndex
+import me.fungames.jfortniteparse.ue4.versions.FUE5MainStreamObjectVersion
 import me.fungames.jfortniteparse.ue4.objects.uobject.serialization.deserializeUnversionedProperties
 
 open class UObject : IPropertyHolder {
@@ -29,6 +32,7 @@ open class UObject : IPropertyHolder {
     var template: ResolvedObject? = null
     final override var properties: MutableList<FPropertyTag>
     var objectGuid: FGuid? = null
+    var sparseClassData: FStructFallback? = null
     var flags = 0
 
     var export: FObjectExport? = null
@@ -75,6 +79,17 @@ open class UObject : IPropertyHolder {
         //FLazyObjectPtr::PossiblySerializeObjectGuid
         if ((flags and EObjectFlags.RF_ClassDefaultObject.value) == 0 && Ar.readBoolean())
             objectGuid = FGuid(Ar)
+        // UE5 blueprint class defaults end with a reference to their sparse class data struct, then its values
+        if ((flags and EObjectFlags.RF_ClassDefaultObject.value) != 0
+            && FUE5MainStreamObjectVersion.get(Ar) >= FUE5MainStreamObjectVersion.SparseClassDataStructSerialization
+            && clazz?.exportType?.endsWith("BlueprintGeneratedClass") == true) {
+            // An unloadable struct (e.g. stale mappings) is skipped like CUE4Parse instead of failing the object
+            val structIndex = FPackageIndex(Ar)
+            val struct = if (structIndex.isNull()) null else structIndex.load<UStruct>()
+            if (struct != null) {
+                sparseClassData = FStructFallback(Ar, lazyOf(struct))
+            }
+        }
         mapToClass(properties, javaClass, this)
     }
 
