@@ -7,6 +7,8 @@ import me.fungames.jfortniteparse.ue4.assets.exports.UScriptStruct
 import me.fungames.jfortniteparse.ue4.assets.mappings.UsmapTypeMappingsProvider.EUsmapPropertyType.*
 import me.fungames.jfortniteparse.ue4.assets.objects.PropertyInfo
 import me.fungames.jfortniteparse.ue4.assets.objects.PropertyType
+import me.fungames.jfortniteparse.ue4.objects.core.misc.FEngineVersion
+import me.fungames.jfortniteparse.ue4.objects.core.serialization.FCustomVersion
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
 import me.fungames.jfortniteparse.ue4.reader.FArchive
 import me.fungames.jfortniteparse.ue4.reader.FByteArchive
@@ -38,7 +40,12 @@ open class UsmapTypeMappingsProvider(private val load: () -> FArchive) : TypeMap
 
         val hasVersioning = if (version >= EUsmapVersion.PackageVersioning.ordinal) Ar.readBoolean() else false
         if (hasVersioning) {
-            throw ParserException("Package versioning is not supported")
+            // Versions come from the provider's own config, so these are skipped
+            if (version >= EUsmapVersion.EngineVersioning.ordinal) FEngineVersion(Ar)
+            Ar.readInt32() // FileVersionUE4
+            Ar.readInt32() // FileVersionUE5
+            Ar.readTArray { FCustomVersion(Ar) }
+            Ar.readUInt32() // NetCL
         }
 
         val method = Ar.read()
@@ -88,18 +95,21 @@ open class UsmapTypeMappingsProvider(private val load: () -> FArchive) : TypeMap
         } else {
             Ar.readArray { String(Ar.read(Ar.read())) }
         }
+        val enumNumbers = mutableMapOf<String, List<Long>>()
         mappings.enums = Ar.readTMap {
             val enumName = Ar.readFName().text
             val enumValuesSize = if (Ar.ver >= EUsmapVersion.LargeEnums.ordinal) Ar.readUInt16().toInt() else Ar.read()
+            // Version 4+ stores each explicit int64 value BEFORE its name
+            val hasNumbers = Ar.ver >= EUsmapVersion.ExplicitEnumValues.ordinal
+            val numbers = ArrayList<Long>(enumValuesSize)
             val enumValues = List(enumValuesSize) {
-                // Version 4+ (Utf8AndAnsiStrProps) stores explicit int64 values BEFORE the name
-                if (Ar.ver >= EUsmapVersion.Utf8AndAnsiStrProps.ordinal) {
-                    Ar.readInt64() // Skip the explicit value
-                }
+                if (hasNumbers) numbers.add(Ar.readInt64())
                 Ar.readFName().text
             }
+            if (hasNumbers) enumNumbers[enumName] = numbers
             enumName to enumValues
         }
+        mappings.enumNumbers = enumNumbers
         repeat(Ar.readInt32()) {
             val struct = UScriptStruct()
             struct.name = Ar.readFName().text
@@ -142,7 +152,8 @@ open class UsmapTypeMappingsProvider(private val load: () -> FArchive) : TypeMap
         PackageVersioning,
         LongFName,
         LargeEnums,
-        Utf8AndAnsiStrProps;
+        ExplicitEnumValues,
+        EngineVersioning;
 
         companion object {
             fun latest() = values().last()

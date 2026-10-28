@@ -22,6 +22,21 @@ class FBox2D {
         isValid = Ar.readFlag()
     }
 
+    constructor(min: FVector2D, max: FVector2D, isValid: Boolean) {
+        this.min = min
+        this.max = max
+        this.isValid = isValid
+    }
+
+    companion object {
+        /** Box2f: always floats, regardless of large world coordinates. */
+        fun readFloats(Ar: FArchive) = FBox2D(
+            FVector2D(Ar.readFloat32(), Ar.readFloat32()),
+            FVector2D(Ar.readFloat32(), Ar.readFloat32()),
+            Ar.readFlag()
+        )
+    }
+
     fun serialize(Ar: FArchiveWriter) {
         min.serialize(Ar)
         max.serialize(Ar)

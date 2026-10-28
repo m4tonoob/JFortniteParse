@@ -21,14 +21,18 @@ abstract class TypeMappingsProvider {
 
     open fun getEnumValues(enumName: FName) = mappings.enums[enumName.text] ?: mappings.enums['E' + enumName.text]
 
+    /** Value names paired with their numbers; falls back to list position when no numbers were stored. */
+    fun getEnumEntries(enumName: FName): List<Pair<String, Long>>? {
+        val names = getEnumValues(enumName) ?: return null
+        val numbers = mappings.enumNumbers[enumName.text] ?: mappings.enumNumbers['E' + enumName.text]
+        return names.mapIndexed { i, name -> name to (numbers?.getOrNull(i) ?: i.toLong()) }
+    }
+
     fun getEnum(enumName: FName): UEnum? {
-        val enumValues = getEnumValues(enumName)
-        if (enumValues != null) {
-            val enum = UEnum()
-            enum.name = enumName.text
-            enum.names = Array(enumValues.size) { FName("$enumName::${enumValues[it]}") to it.toLong() }
-            return enum
-        }
-        return null
+        val entries = getEnumEntries(enumName) ?: return null
+        val enum = UEnum()
+        enum.name = enumName.text
+        enum.names = Array(entries.size) { FName("$enumName::${entries[it].first}") to entries[it].second }
+        return enum
     }
 }

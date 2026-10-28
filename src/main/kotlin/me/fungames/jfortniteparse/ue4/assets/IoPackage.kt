@@ -41,7 +41,7 @@ class IoPackage : Package {
     var exportBundleHeaders: Array<FExportBundleHeader>? = null
         private set
     val exportBundleEntries: Array<FExportBundleEntry>
-    val importedPackages: Lazy<List<IoPackage?>>
+    val importedPackages: List<Lazy<IoPackage?>>
     override val exportsLazy: List<Lazy<UObject>>
     var bulkDataStartOffset = 0
         private set
@@ -161,9 +161,8 @@ class IoPackage : Package {
             allExportDataOffset = summary.graphDataOffset + summary.graphDataSize
         }
 
-        // Preload dependencies
-        val importedPackageIds = storeEntry.importedPackages
-        importedPackages = lazy { importedPackageIds.map { provider.loadGameFile(it) } }
+        // Each dependency loads on first use, so resolving one import doesn't load them all
+        importedPackages = storeEntry.importedPackages.map { id -> lazy { provider.loadGameFile(id) } }
 
         // Populate lazy exports
         fun processEntry(entry: FExportBundleEntry, pos: Int, newPositioning: Boolean): Int {
@@ -261,14 +260,15 @@ class IoPackage : Package {
                     val localImportedPublicExportHashes = importedPublicExportHashes
                     if (localImportedPublicExportHashes != null) {
                         val packageImportRef = index.toPackageImportRef()
-                        val pkg = importedPackages.value.getOrNull(packageImportRef.importedPackageIndex.toInt())
+                        val pkg = importedPackages.getOrNull(packageImportRef.importedPackageIndex.toInt())?.value
                         pkg?.exportMap?.forEachIndexed { exportIndex, exportMapEntry ->
                             if (exportMapEntry.publicExportHash == localImportedPublicExportHashes[packageImportRef.importedPublicExportHashIndex]) {
                                 return ResolvedExportObject(exportIndex, pkg)
                             }
                         }
                     } else {
-                        for (pkg in importedPackages.value) {
+                        for (lazyPkg in importedPackages) {
+                            val pkg = lazyPkg.value
                             pkg?.exportMap?.forEachIndexed { exportIndex, exportMapEntry ->
                                 if (exportMapEntry.globalImportIndex == index) {
                                     return ResolvedExportObject(exportIndex, pkg)

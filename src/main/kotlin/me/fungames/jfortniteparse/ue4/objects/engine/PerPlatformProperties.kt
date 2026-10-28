@@ -1,5 +1,6 @@
 package me.fungames.jfortniteparse.ue4.objects.engine
 
+import me.fungames.jfortniteparse.ue4.objects.core.misc.FFrameRate
 import me.fungames.jfortniteparse.ue4.objects.uobject.FName
 import me.fungames.jfortniteparse.ue4.reader.FArchive
 import me.fungames.jfortniteparse.ue4.versions.GAME_UE5
@@ -61,6 +62,56 @@ class FPerPlatformFloat {
     }
 
     constructor(cooked: Boolean, value: Float) {
+        this.cooked = cooked
+        this.value = value
+    }
+}
+
+class FPerPlatformFString {
+    var cooked: Boolean
+    var value: String
+    var perPlatform: Map<FName, String>? = null
+
+    constructor(Ar: FArchive) {
+        cooked = Ar.readBoolean()
+        value = Ar.readString()
+        perPlatform = readPerPlatform(Ar, cooked) { Ar.readString() }
+    }
+
+    fun serialize(Ar: FArchiveWriter) {
+        Ar.writeBoolean(cooked)
+        Ar.writeString(value)
+        writePerPlatform(Ar, perPlatform) { Ar.writeString(it) }
+    }
+
+    constructor(cooked: Boolean, value: String) {
+        this.cooked = cooked
+        this.value = value
+    }
+}
+
+class FPerPlatformFrameRate {
+    var cooked: Boolean
+    var value: FFrameRate
+    var perPlatform: Map<FName, FFrameRate>? = null
+
+    constructor(Ar: FArchive) {
+        cooked = Ar.readBoolean()
+        value = FFrameRate(Ar.readInt32(), Ar.readInt32())
+        perPlatform = readPerPlatform(Ar, cooked) { FFrameRate(Ar.readInt32(), Ar.readInt32()) }
+    }
+
+    fun serialize(Ar: FArchiveWriter) {
+        Ar.writeBoolean(cooked)
+        Ar.writeInt32(value.numerator)
+        Ar.writeInt32(value.denominator)
+        writePerPlatform(Ar, perPlatform) {
+            Ar.writeInt32(it.numerator)
+            Ar.writeInt32(it.denominator)
+        }
+    }
+
+    constructor(cooked: Boolean, value: FFrameRate) {
         this.cooked = cooked
         this.value = value
     }

@@ -195,13 +195,14 @@ sealed class FProperty {
                     } else if (type != ReadType.MAP && type != ReadType.ARRAY && Ar.useUnversionedPropertySerialization) {
                         val ordinal = if (nz) if (typeData.isEnumAsByte) Ar.read().toLong() else Ar.readInt64() else 0L
                         val enumClass = typeData.enumClass?.value
+                        // An unlisted number (combined flags, zero with no 0 entry) becomes "Enum::<n>", like CUE4Parse
                         if (enumClass != null) { // serialized or reflection
-                            val enumValue = enumClass.names.firstOrNull { it.second == ordinal }
-                                ?: throw ParserException("Failed to get enum index $ordinal for enum ${enumClass.name}", Ar)
-                            EnumProperty(enumValue.first)
+                            val enumValue = enumClass.names.firstOrNull { it.second == ordinal }?.first
+                                ?: FName("${typeData.enumName.text}::$ordinal")
+                            EnumProperty(enumValue)
                         } else { // loaded from mappings provider
-                            val enumValue = Ar.provider!!.mappingsProvider.getEnumValues(typeData.enumName)?.getOrNull(ordinal.toInt())
-                                ?: throw ParserException("Failed to get enum index $ordinal for enum ${typeData.enumName}", Ar)
+                            val enumValue = Ar.provider!!.mappingsProvider.getEnumEntries(typeData.enumName)?.firstOrNull { it.second == ordinal }?.first
+                                ?: ordinal.toString()
                             val fakeName = (typeData.enumName.text + "::" + enumValue)
                             EnumProperty(FName(fakeName))
                         }

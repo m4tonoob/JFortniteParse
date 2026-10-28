@@ -15,6 +15,10 @@ import me.fungames.jfortniteparse.ue4.writer.FArchiveWriter
 
 enum class EFormatArgumentType { Int, UInt, Float, Double, Text, Gender }
 
+enum class ETextGender { Masculine, Feminine, Neuter }
+
+enum class ETransformType { ToLower, ToUpper }
+
 class FText {
     var flags: UInt
     var historyType: ETextHistoryType
@@ -27,18 +31,18 @@ class FText {
         textHistory = when (historyType) {
             ETextHistoryType.None -> FTextHistory.None(Ar)
             ETextHistoryType.Base -> FTextHistory.Base(Ar)
-            ETextHistoryType.NamedFormat,
+            ETextHistoryType.NamedFormat -> FTextHistory.NamedFormat(Ar)
             ETextHistoryType.OrderedFormat -> FTextHistory.OrderedFormat(Ar)
             ETextHistoryType.ArgumentFormat -> FTextHistory.ArgumentFormat(Ar)
             ETextHistoryType.AsNumber,
             ETextHistoryType.AsPercent,
-            ETextHistoryType.AsCurrency -> FTextHistory.AsCurrency(Ar)
-            ETextHistoryType.AsDate -> TODO()
-            ETextHistoryType.AsTime -> TODO()
+            ETextHistoryType.AsCurrency -> FTextHistory.AsCurrency(Ar, historyType)
+            ETextHistoryType.AsDate -> FTextHistory.AsDate(Ar)
+            ETextHistoryType.AsTime -> FTextHistory.AsTime(Ar)
             ETextHistoryType.AsDateTime -> FTextHistory.AsDateTime(Ar)
-            ETextHistoryType.Transform -> TODO()
+            ETextHistoryType.Transform -> FTextHistory.Transform(Ar)
             ETextHistoryType.StringTableEntry -> FTextHistory.StringTableEntry(Ar)
-            ETextHistoryType.TextGenerator -> TODO()
+            ETextHistoryType.TextGenerator -> FTextHistory.TextGenerator(Ar)
         }
         text = textHistory.text
     }
@@ -67,12 +71,7 @@ class FText {
         this.text = textHistory.text
     }
 
-    fun textForLocres(locres: Locres?): String {
-        val history = textHistory
-        return if (history is FTextHistory.Base)
-            locres?.texts?.stringData?.get(history.namespace)?.get(history.key) ?: text
-        else text
-    }
+    fun textForLocres(locres: Locres?) = textHistory.localized(locres)
 }
 
 sealed class FTextHistory {
@@ -108,6 +107,8 @@ sealed class FTextHistory {
         override val text: String
             get() = sourceString
 
+        override fun localized(locres: Locres?) = locres?.texts?.stringData?.get(namespace)?.get(key) ?: text
+
         constructor(Ar: FArchive) {
             namespace = Ar.readString()
             key = Ar.readString()
@@ -127,12 +128,46 @@ sealed class FTextHistory {
         }
     }
 
+    class NamedFormat : FTextHistory {
+        var sourceFmt: FText
+        var arguments: MutableMap<String, FFormatArgumentValue>
+
+        override val text: String
+            get() = localized(null)
+
+        override fun localized(locres: Locres?) = arguments.entries.fold(sourceFmt.textForLocres(locres)) { acc, (name, value) ->
+            acc.replace("{$name}", value.textForLocres(locres))
+        }
+
+        constructor(Ar: FArchive) {
+            sourceFmt = FText(Ar)
+            arguments = Ar.readTMap { Ar.readString() to FFormatArgumentValue(Ar) }
+        }
+
+        constructor(sourceFmt: FText, arguments: MutableMap<String, FFormatArgumentValue>) {
+            this.sourceFmt = sourceFmt
+            this.arguments = arguments
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            sourceFmt.serialize(Ar)
+            Ar.writeTMap(arguments) { name, value ->
+                Ar.writeString(name)
+                value.serialize(Ar)
+            }
+        }
+    }
+
     class OrderedFormat : FTextHistory {
         var sourceFmt: FText
         var arguments: Array<FFormatArgumentValue>
 
         override val text: String
-            get() = sourceFmt.text //TODO
+            get() = localized(null)
+
+        override fun localized(locres: Locres?) = arguments.withIndex().fold(sourceFmt.textForLocres(locres)) { acc, (i, value) ->
+            acc.replace("{$i}", value.textForLocres(locres))
+        }
 
         constructor(Ar: FArchive) {
             sourceFmt = FText(Ar)
@@ -155,7 +190,11 @@ sealed class FTextHistory {
         var arguments: Array<FFormatArgumentData>
 
         override val text: String
-            get() = sourceFmt.text
+            get() = localized(null)
+
+        override fun localized(locres: Locres?) = arguments.fold(sourceFmt.textForLocres(locres)) { acc, arg ->
+            acc.replace("{${arg.argumentName}}", arg.argumentValue.textForLocres(locres))
+        }
 
         constructor(Ar: FArchive) {
             sourceFmt = FText(Ar)
@@ -173,7 +212,9 @@ sealed class FTextHistory {
         }
     }
 
+    /** Shared by AsNumber, AsPercent and AsCurrency; only AsCurrency stores a currency code. */
     class AsCurrency : FTextHistory {
+        var historyType = ETextHistoryType.AsCurrency
         /** The currency used to format the number. */
         var currencyCode = ""
         /** The source value to format from */
@@ -186,8 +227,9 @@ sealed class FTextHistory {
         override val text: String
             get() = sourceValue.toString()
 
-        constructor(Ar: FArchive) {
-            if (Ar.ver >= 389) { // VER_UE4_ADDED_CURRENCY_CODE_TO_FTEXT
+        constructor(Ar: FArchive, historyType: ETextHistoryType) {
+            this.historyType = historyType
+            if (historyType == ETextHistoryType.AsCurrency && Ar.ver >= 389) { // VER_UE4_ADDED_CURRENCY_CODE_TO_FTEXT
                 currencyCode = Ar.readString()
             }
             sourceValue = FFormatArgumentValue(Ar)
@@ -206,7 +248,7 @@ sealed class FTextHistory {
         }
 
         override fun serialize(Ar: FArchiveWriter) {
-            if (Ar.ver >= 389) { // VER_UE4_ADDED_CURRENCY_CODE_TO_FTEXT
+            if (historyType == ETextHistoryType.AsCurrency && Ar.ver >= 389) { // VER_UE4_ADDED_CURRENCY_CODE_TO_FTEXT
                 Ar.writeString(currencyCode)
             }
             sourceValue.serialize(Ar)
@@ -256,6 +298,92 @@ sealed class FTextHistory {
         }
     }
 
+    class AsDate : FTextHistory {
+        var sourceDateTime: FDateTime
+        var dateStyle: EDateTimeStyle
+        var timeZone: String
+        var targetCulture: String
+        override val text: String
+            get() = "$timeZone: ${sourceDateTime.date}"
+
+        constructor(Ar: FArchive) {
+            sourceDateTime = FDateTime(Ar)
+            dateStyle = EDateTimeStyle.values()[Ar.readInt8().toInt()]
+            timeZone = Ar.readString()
+            targetCulture = Ar.readString()
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            sourceDateTime.serialize(Ar)
+            Ar.writeInt8(dateStyle.ordinal.toByte())
+            Ar.writeString(timeZone)
+            Ar.writeString(targetCulture)
+        }
+    }
+
+    class AsTime : FTextHistory {
+        var sourceDateTime: FDateTime
+        var timeStyle: EDateTimeStyle
+        var timeZone: String
+        var targetCulture: String
+        override val text: String
+            get() = "$timeZone: ${sourceDateTime.date}"
+
+        constructor(Ar: FArchive) {
+            sourceDateTime = FDateTime(Ar)
+            timeStyle = EDateTimeStyle.values()[Ar.readInt8().toInt()]
+            timeZone = Ar.readString()
+            targetCulture = Ar.readString()
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            sourceDateTime.serialize(Ar)
+            Ar.writeInt8(timeStyle.ordinal.toByte())
+            Ar.writeString(timeZone)
+            Ar.writeString(targetCulture)
+        }
+    }
+
+    class Transform : FTextHistory {
+        var sourceText: FText
+        var transformType: ETransformType
+        override val text: String
+            get() = localized(null)
+
+        override fun localized(locres: Locres?): String {
+            val source = sourceText.textForLocres(locres)
+            return when (transformType) {
+                ETransformType.ToLower -> source.lowercase()
+                ETransformType.ToUpper -> source.uppercase()
+            }
+        }
+
+        constructor(Ar: FArchive) {
+            sourceText = FText(Ar)
+            transformType = ETransformType.values()[Ar.read()]
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            sourceText.serialize(Ar)
+            Ar.write(transformType.ordinal)
+        }
+    }
+
+    /** Reads only the type id, matching CUE4Parse; generator contents are not parsed. */
+    class TextGenerator : FTextHistory {
+        var generatorTypeId: FName
+        override val text: String
+            get() = generatorTypeId.text
+
+        constructor(Ar: FArchive) {
+            generatorTypeId = Ar.readFName()
+        }
+
+        override fun serialize(Ar: FArchiveWriter) {
+            Ar.writeFName(generatorTypeId)
+        }
+    }
+
     class StringTableEntry : FTextHistory {
         /** The string table ID being referenced */
         var tableId: FName
@@ -270,8 +398,8 @@ sealed class FTextHistory {
             }
             tableId = Ar.readFName()
             key = Ar.readString()
-            val table = Ar.provider?.loadObject<UStringTable>(tableId.text) ?: throw ParserException("Failed to load string table '$tableId'")
-            text = table.entries[key] ?: throw ParserException("Didn't find needed in key in string table")
+            // A missing table or key must not fail the whole package
+            text = Ar.provider?.loadObject<UStringTable>(tableId.text)?.entries?.get(key) ?: ""
         }
 
         constructor(tableId: FName, key: String, text: String) {
@@ -291,6 +419,7 @@ sealed class FTextHistory {
 
     abstract fun serialize(Ar: FArchiveWriter)
     abstract val text: String
+    open fun localized(locres: Locres?) = text
 }
 
 enum class ERoundingMode {
@@ -362,7 +491,7 @@ class FFormatArgumentValue {
             EFormatArgumentType.Float -> Ar.readFloat32()
             EFormatArgumentType.Double -> Ar.readDouble()
             EFormatArgumentType.Text -> FText(Ar)
-            EFormatArgumentType.Gender -> TODO("Gender Argument not supported yet")
+            EFormatArgumentType.Gender -> ETextGender.values()[Ar.readUInt64().toInt()]
         }
     }
 
@@ -370,6 +499,10 @@ class FFormatArgumentValue {
         this.type = type
         this.value = value
     }
+
+    fun textForLocres(locres: Locres?) = (value as? FText)?.textForLocres(locres) ?: value.toString()
+
+    override fun toString() = textForLocres(null)
 
     fun serialize(Ar: FArchiveWriter) {
         Ar.writeInt8(type.ordinal.toByte())
@@ -379,7 +512,7 @@ class FFormatArgumentValue {
             EFormatArgumentType.Float -> Ar.writeFloat32(value as Float)
             EFormatArgumentType.Double -> Ar.writeDouble(value as Double)
             EFormatArgumentType.Text -> (value as FText).serialize(Ar)
-            EFormatArgumentType.Gender -> TODO("Gender Argument not supported yet")
+            EFormatArgumentType.Gender -> Ar.writeUInt64((value as ETextGender).ordinal.toULong())
         }
     }
 }

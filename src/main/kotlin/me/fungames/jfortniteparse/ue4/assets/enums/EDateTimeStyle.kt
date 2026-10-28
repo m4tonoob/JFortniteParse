@@ -5,5 +5,6 @@ enum class EDateTimeStyle {
     Short,
     Medium,
     Long,
-    Full
+    Full,
+    Custom
 }

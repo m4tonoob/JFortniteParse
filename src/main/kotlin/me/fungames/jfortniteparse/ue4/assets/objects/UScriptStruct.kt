@@ -9,6 +9,7 @@ import me.fungames.jfortniteparse.ue4.objects.ai.navigation.FNavAgentSelector
 import me.fungames.jfortniteparse.ue4.objects.core.math.*
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FDateTime
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FFrameNumber
+import me.fungames.jfortniteparse.ue4.objects.core.misc.FFrameRate
 import me.fungames.jfortniteparse.ue4.objects.core.misc.FGuid
 import me.fungames.jfortniteparse.ue4.objects.engine.*
 import me.fungames.jfortniteparse.ue4.objects.engine.animation.FSmartName
@@ -37,7 +38,8 @@ class UScriptStruct {
         val nz = type != ReadType.ZERO
         structType = when (structName.text) {
             "Box" -> if (nz) FBox(Ar) else FBox(FVector(0f, 0f, 0f), FVector(0f, 0f, 0f))
-            "Box2D", "Box2f" -> if (nz) FBox2D(Ar) else FBox2D(FVector2D(0f, 0f), FVector2D(0f, 0f))
+            "Box2D" -> if (nz) FBox2D(Ar) else FBox2D()
+            "Box2f" -> if (nz) FBox2D.readFloats(Ar) else FBox2D()
             "Color" -> if (nz) FColor(Ar) else FColor()
             "ColorMaterialInput" -> FColorMaterialInput(Ar)
             "DateTime", "Timespan" -> if (nz) FDateTime(Ar) else FDateTime()
@@ -45,9 +47,39 @@ class UScriptStruct {
             "FrameNumber" -> FFrameNumber(Ar)
             "GameplayTagContainer" -> if (nz) FGameplayTagContainer(Ar) else FGameplayTagContainer()
             "Guid", "GUID" -> if (nz) FGuid(Ar) else FGuid()
-            "IntPoint" -> if (nz) FIntPoint(Ar) else FIntPoint()
+            "IntPoint", "Int32Point" -> if (nz) FIntPoint(Ar) else FIntPoint()
             "IntVector" -> if (nz) FIntVector(Ar) else FIntVector()
-            "IntVector2" -> if (nz) FIntVector2(Ar) else FIntVector2()
+            "IntVector2", "Int32Vector2" -> if (nz) FIntVector2(Ar) else FIntVector2()
+            "IntVector4" -> if (nz) TIntVector4(Ar.readInt32(), Ar.readInt32(), Ar.readInt32(), Ar.readInt32()) else TIntVector4(0, 0, 0, 0)
+            "UintVector2", "Uint32Point" -> if (nz) TIntVector2(Ar.readUInt32(), Ar.readUInt32()) else TIntVector2(0u, 0u)
+            "UintVector" -> if (nz) TIntVector3(Ar.readUInt32(), Ar.readUInt32(), Ar.readUInt32()) else TIntVector3(0u, 0u, 0u)
+            "UintVector4", "Uint32Vector4" -> if (nz) TIntVector4(Ar.readUInt32(), Ar.readUInt32(), Ar.readUInt32(), Ar.readUInt32()) else TIntVector4(0u, 0u, 0u, 0u)
+            "Int64Vector2", "Int64Point" -> if (nz) TIntVector2(Ar.readInt64(), Ar.readInt64()) else TIntVector2(0L, 0L)
+            "Int64Vector" -> if (nz) TIntVector3(Ar.readInt64(), Ar.readInt64(), Ar.readInt64()) else TIntVector3(0L, 0L, 0L)
+            "Int64Vector4" -> if (nz) TIntVector4(Ar.readInt64(), Ar.readInt64(), Ar.readInt64(), Ar.readInt64()) else TIntVector4(0L, 0L, 0L, 0L)
+            "UInt64Vector2", "UInt64Point" -> if (nz) TIntVector2(Ar.readUInt64(), Ar.readUInt64()) else TIntVector2(0uL, 0uL)
+            "UInt64Vector" -> if (nz) TIntVector3(Ar.readUInt64(), Ar.readUInt64(), Ar.readUInt64()) else TIntVector3(0uL, 0uL, 0uL)
+            "UInt64Vector4" -> if (nz) TIntVector4(Ar.readUInt64(), Ar.readUInt64(), Ar.readUInt64(), Ar.readUInt64()) else TIntVector4(0uL, 0uL, 0uL, 0uL)
+            // Fixed-precision math types ignore large world coordinates
+            "Vector2f" -> if (nz) FVector2D(Ar.readFloat32(), Ar.readFloat32()) else FVector2D()
+            "Vector3f" -> if (nz) FVector(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FVector()
+            "Vector3d" -> if (nz) FVector(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FVector()
+            "Vector4f" -> if (nz) FVector4(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FVector4()
+            "Vector4d" -> if (nz) FVector4(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FVector4()
+            "Rotator3f" -> if (nz) FRotator(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FRotator()
+            "Rotator3d" -> if (nz) FRotator(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FRotator()
+            "Quat4f" -> if (nz) FQuat(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FQuat(0f, 0f, 0f, 0f)
+            "Quat4d" -> if (nz) FQuat(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FQuat(0f, 0f, 0f, 0f)
+            "Plane4f" -> if (nz) FPlane(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FPlane()
+            "Plane4d" -> if (nz) FPlane(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FPlane()
+            "Sphere" -> if (nz) FSphere(Ar) else FSphere(0f, 0f, 0f, 0f)
+            "Sphere3f" -> if (nz) FSphere(Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32(), Ar.readFloat32()) else FSphere(0f, 0f, 0f, 0f)
+            "Sphere3d" -> if (nz) FSphere(Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat(), Ar.readDouble().toFloat()) else FSphere(0f, 0f, 0f, 0f)
+            "PerPlatformFString" -> if (nz) FPerPlatformFString(Ar) else FPerPlatformFString(false, "")
+            "PerPlatformFrameRate" -> if (nz) FPerPlatformFrameRate(Ar) else FPerPlatformFrameRate(false, FFrameRate(0, 0))
+            "PerQualityLevelFloat" -> if (nz) FPerQualityLevelFloat(Ar) else FPerQualityLevelFloat(0f)
+            "RemoteServerId" -> if (nz) Ar.readUInt32() else 0u
+            "ZeroSizeProperty" -> Unit
             "LevelSequenceObjectReferenceMap" -> FLevelSequenceObjectReferenceMap(Ar)
             "LinearColor" -> if (nz) FLinearColor(Ar) else FLinearColor()
             "MaterialAttributesInput" -> FMaterialAttributesInput(Ar)
@@ -69,7 +101,7 @@ class UScriptStruct {
             "PerPlatformBool" -> if (nz) FPerPlatformBool(Ar) else FPerPlatformBool(false, false)
             "PerPlatformFloat" -> if (nz) FPerPlatformFloat(Ar) else FPerPlatformFloat(false, 0f)
             "PerPlatformInt" -> if (nz) FPerPlatformInt(Ar) else FPerPlatformInt(false, 0)
-            "PerQualityLevelInt" -> FPerQualityLevelInt(Ar)
+            "PerQualityLevelInt" -> if (nz) FPerQualityLevelInt(Ar) else FPerQualityLevelInt(0)
             "Plane" -> if (nz) FPlane(Ar) else FPlane()
             "Quat" -> FQuat(Ar)
             "RichCurveKey" -> FRichCurveKey(Ar)
