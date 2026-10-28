@@ -40,7 +40,7 @@ sealed class FProperty {
             value is UScriptArray && List::class.java.isAssignableFrom(clazz) && type != null -> {
                 val typeArgs = (type as ParameterizedType).actualTypeArguments
                 val innerType = typeArgs[0]
-                value.contents.mapIndexed { i, tag ->
+                value.contents.map { tag ->
                     val mapped = if (innerType is ParameterizedType) {
                         tag.getTagTypeValue(innerType.rawType as Class<*>, innerType)
                     } else {
@@ -193,7 +193,7 @@ sealed class FProperty {
                     if (type == ReadType.NORMAL && typeData.enumName.isNone()) {
                         EnumProperty(FName.NAME_None)
                     } else if (type != ReadType.MAP && type != ReadType.ARRAY && Ar.useUnversionedPropertySerialization) {
-                        val ordinal = if (nz) if (typeData.isEnumAsByte) Ar.read().toLong() else Ar.readInt64() else 0L
+                        val ordinal = if (nz) readEnumOrdinal(Ar, typeData) else 0L
                         val enumClass = typeData.enumClass?.value
                         // An unlisted number (combined flags, zero with no 0 entry) becomes "Enum::<n>", like CUE4Parse
                         if (enumClass != null) { // serialized or reflection
@@ -279,6 +279,18 @@ sealed class FProperty {
                 is UInt64Property -> Ar.writeUInt64(tag.number)
                 is FieldPathProperty -> {} // FFieldPath doesn't have serialize yet
             }
+        }
+
+        /** Reads the enum's number at the width of its underlying type, like CUE4Parse. */
+        private fun readEnumOrdinal(Ar: FAssetArchive, typeData: PropertyType): Long = when (typeData.innerType?.type?.text) {
+            "ByteProperty" -> Ar.readUInt8().toLong()
+            "Int8Property" -> Ar.readInt8().toLong()
+            "Int16Property" -> Ar.readInt16().toLong()
+            "UInt16Property" -> Ar.readUInt16().toLong()
+            "IntProperty" -> Ar.readInt32().toLong()
+            "UInt32Property" -> Ar.readUInt32().toLong()
+            "Int64Property", "UInt64Property" -> Ar.readInt64()
+            else -> if (typeData.isEnumAsByte) Ar.read().toLong() else Ar.readInt64()
         }
     }
 
