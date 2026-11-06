@@ -8,13 +8,16 @@ enum class FnLanguage(val languageCode: String, val localizationFolder: String =
     ES("es"),
     ES_419("es-419"),
     FR("fr"),
+    ID("id"),
     IT("it"),
     JA("ja"),
     KO("ko"),
     PL("pl"),
     PT_BR("pt-BR"),
     RU("ru"),
+    TH("th"),
     TR("tr"),
+    VI("vi"),
     ZH_CN("zh-CN", "zh-Hans"), // languageCode stays "zh-CN" for Discord/preference matching; Epic ships the locres folder as "zh-Hans"
     ZH_HANT("zh-Hant"),
     UNKNOWN("unknown");
