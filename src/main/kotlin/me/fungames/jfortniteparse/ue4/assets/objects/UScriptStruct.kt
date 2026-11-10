@@ -44,6 +44,7 @@ class UScriptStruct {
             "ColorMaterialInput" -> FColorMaterialInput(Ar)
             "DateTime", "Timespan" -> if (nz) FDateTime(Ar) else FDateTime()
             "ExpressionInput" -> FExpressionInput(Ar)
+            "FontData" -> FFontData(Ar)
             "FrameNumber" -> FFrameNumber(Ar)
             "GameplayTagContainer" -> if (nz) FGameplayTagContainer(Ar) else FGameplayTagContainer()
             "Guid", "GUID" -> if (nz) FGuid(Ar) else FGuid()

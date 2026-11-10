@@ -100,6 +100,13 @@ object JsonSerializer {
                 "objectPath" to ob.objectPath
                 //theres more but not implemented for json
             )
+            is FFontData -> ob.fallbackStruct?.toJson(context) ?: jsonObject(
+                "localFontFaceAsset" to ob.localFontFaceAsset?.toJson(context),
+                "fontFilename" to ob.fontFilename,
+                "hinting" to ob.hinting.name,
+                "loadingPolicy" to ob.loadingPolicy.name,
+                "subFaceIndex" to ob.subFaceIndex
+            )
             is FFrameNumber -> JsonPrimitive(ob.value)
             is FSmartName -> JsonPrimitive(ob.displayName.text)
             is FRichCurveKey -> jsonObject(
